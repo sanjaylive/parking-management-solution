@@ -1,0 +1,17 @@
+name: p2a_core
+description: Park2All API client, auth/session storage and encrypted offline event queue.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ^3.9.0
+dependencies:
+  flutter:
+    sdk: flutter
+  dio: ^5.9.0
+  flutter_secure_storage: ^9.2.4
+  cryptography: ^2.7.0
+  uuid: ^4.5.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

@@ -10,3 +10,6 @@ coverage
 .dart_tool
 build/
 .turbo
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml

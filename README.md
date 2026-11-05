@@ -26,3 +26,14 @@ cd apps/api
 DATABASE_URL=postgresql://park2all:park2all@127.0.0.1:57432/park2all_test npx prisma migrate deploy
 pnpm test     # unit + e2e (uses .env.test → park2all_test)
 ```
+
+## Staff app (Flutter)
+
+```bash
+cd apps/staff-app
+flutter test
+flutter run -d chrome --dart-define=API_URL=http://localhost:4100 --web-port 3102     # web
+flutter run --dart-define=API_URL=http://10.0.2.2:4100                                # Android emulator
+```
+
+Shared packages: `flutter-packages/design-system` (p2a_design), `flutter-packages/core` (p2a_core).

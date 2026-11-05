@@ -272,7 +272,9 @@ export class GateService {
         });
 
         let slot = null;
-        if (facility.occupancyMode === 'SLOT_BASED') {
+        // Provisional (offline-synced) entries count toward capacity but never claim a specific slot:
+        // nobody knows which bay the car actually used, and a guessed slot would corrupt the slot map.
+        if (facility.occupancyMode === 'SLOT_BASED' && !input.provisional) {
           slot = await this.occupancy.assignSlot(tx, { facilityId: facility.id, vehicleClass, sessionId: session.id, slotId: reservation?.slotId ?? pass?.slotId, preferEv: vehicleClass.startsWith('EV_') });
           if (!slot && !input.provisional) throw Conflict('NO_SLOT_AVAILABLE', 'No compatible slot is free');
         }

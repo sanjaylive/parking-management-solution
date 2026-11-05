@@ -1,0 +1,13 @@
+name: p2a_design
+description: Park2All Material 3 design system — tokens, theme and shared widgets.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ^3.9.0
+dependencies:
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

@@ -1,0 +1,22 @@
+name: staff_app
+description: Park2All Staff — gate attendants, cashiers and supervisors.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: ^3.9.0
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  go_router: ^16.0.0
+  mobile_scanner: ^7.0.1
+  p2a_design:
+    path: ../../flutter-packages/design-system
+  p2a_core:
+    path: ../../flutter-packages/core
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

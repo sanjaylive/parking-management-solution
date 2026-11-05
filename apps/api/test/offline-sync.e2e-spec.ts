@@ -19,7 +19,7 @@ const pool = () => prisma.parkingCapacityPool.findUniqueOrThrow({ where: { facil
 beforeAll(async () => {
   await resetDb();
   app = await createApp();
-  op = await setupOperator('offline-lot', { carCapacity: 2 });
+  op = await setupOperator('offline-lot', { carCapacity: 2, slotBased: true });
   g = authed(app, await login(app, 'gate+owner@offline-lot.test'), op.tenant.id);
   sup = authed(app, await login(app, 'supervisor+owner@offline-lot.test'), op.tenant.id);
   await g.post('/v1/shifts/open').send({ facilityId: op.facility.id }).expect(201);
@@ -61,6 +61,7 @@ describe('Offline sync', () => {
     expect(s.entryAt.toISOString()).toBe(entryAt);
     expect(s.exitAt!.toISOString()).toBe(exitAt);
     expect(s.amountPaidMinor).toBe(due);
+    expect(await prisma.parkingAssignment.count({ where: { sessionId: s.id } })).toBe(0); // no guessed slot
     expect((await pool()).occupied).toBe(0);
 
     const replay = await g.post('/v1/gate/offline-sync').send(batch).expect(200);

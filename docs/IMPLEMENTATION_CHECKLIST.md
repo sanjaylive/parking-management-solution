@@ -2,7 +2,7 @@
 
 Legend: ✅ built & tested · 🟡 built, partial or untested · ⬜ not started · 🔒 pending external credentials/hardware
 
-_Last updated: 2026-11-05_
+_Last updated: 2026-11-06_
 
 ## Verification status
 
@@ -10,7 +10,12 @@ _Last updated: 2026-11-05_
 |---|---|
 | API typecheck (`tsc --noEmit`) | ✅ clean |
 | API unit tests (pricing engine, plates) | ✅ 27/27 |
-| API e2e tests (real Postgres) | ✅ 14/14 |
+| API e2e tests (real Postgres) | ✅ 19/19 (14 critical flows + 5 offline sync) |
+| Flutter `analyze` (design-system, core, staff-app) | ✅ no issues |
+| Flutter tests | ✅ 13/13 (design 4, core 4, staff app 5) |
+| Staff app web build + manual run in Chrome | ✅ login → online entry → API stopped → provisional entry queued → API restarted → auto-sync → verified in DB |
+| Staff app Android debug APK | ✅ builds (`flutter build apk --debug`); not run on a device/emulator |
+| Staff app iOS | ⬜ not built — Xcode installation incomplete on this machine |
 | API production build + boot | ✅ `/health` ok, Swagger at `/docs` |
 | Operator web typecheck + `next build` | ✅ clean |
 | Operator web manual browser run | ✅ login → dashboard → entry → exit quote → cash → exit → slot released; dark mode |
@@ -23,7 +28,9 @@ _Last updated: 2026-11-05_
 - ✅ OTP login (rate limits, cooldown, attempt lockout, hashed codes), password login, JWT + refresh rotation with reuse detection
 - ✅ RBAC (permission catalog, 8 roles), tenant isolation guard, facility-scoped membership
 - 🟡 Web design system (tokens, light/dark, MetricCard, OccupancyRing, VehicleNumberPlate, SearchableCombobox, states): lives in `apps/operator-web/src/components/ui` — **not yet extracted** to `packages/web-ui`
-- ⬜ Flutter design system package
+- ✅ Flutter design system (`flutter-packages/design-system`): M3 theme from brand tokens, light/dark, VehicleNumberPlate, StatusChip, OccupancyRing, GradientHeader, EmptyState, ₹ formatting (Indian grouping)
+- ✅ Flutter core (`flutter-packages/core`): Dio API client (refresh, tenant header, idempotency keys), secure session store, AES-256-GCM offline queue
+- 🟡 Freezed not used — models are plain Dart maps/classes for now (no codegen step); revisit when the customer app needs typed models
 - ⬜ `packages/shared-types` / `api-contracts` (generate from OpenAPI)
 
 ## Phase 2 — Tenant, facility, gate, zone, slot
@@ -54,7 +61,9 @@ _Last updated: 2026-11-05_
 
 ## Phase 5 — Staff app & gate kiosk
 - 🟡 Gate console in operator web (entry/exit, cash, UPI order, shift) — serves as the kiosk prototype
-- ⬜ Staff Flutter app
+- ✅ Staff Flutter app (`apps/staff-app`): login, role-aware gate (entry/exit, QR scan, plate entry, vehicle class), fee breakdown, cash / UPI order, exit confirm with barrier result, vehicles-inside list with occupancy ring, shift open/close with variance, offline mode with encrypted queue + auto-sync + attention list
+- ⬜ Staff app: vehicle photo capture (needs object storage), receipt printing (needs printer adapter), incident reporting + valet + supervisor override approval screens (APIs for incidents/valet not built yet)
+- ⬜ Staff app offline fee estimate — offline exits record the cash collected; the server recalculates and flags shortfalls
 - ⬜ Dedicated fullscreen kiosk PWA (device-bound auth, offline indicator)
 
 ## Phase 6 — Operator portal & app
@@ -86,7 +95,10 @@ _Last updated: 2026-11-05_
 - 🔒 Vendor adapters (Hikvision/ZKTeco etc.) — need SDKs and devices
 
 ## Phase 11 — Offline, security, performance
-- 🟡 Gate service supports provisional/back-dated entries (`occurredAt`, `provisional`) — **offline sync endpoint not yet exposed**, no client queue
+- ✅ Offline sync: `POST /v1/gate/offline-sync` (idempotent per localId, time-ordered, provisional entries at original time, no barrier actuation, offline cash applied, underpaid exits → EXCEPTION, conflicts reported), supervisor review queue, device config endpoint
+- ✅ Provisional entries count toward capacity but never claim a guessed slot
+- ⚠️ Design change: dropped the DB `occupied <= capacity` CHECK so synced provisional entries keep the counter truthful; live entries are still capped by the row-locked service (concurrency test)
+- ⬜ Supervisor UI for the offline review queue (API exists)
 - ✅ Security covered by tests: cross-tenant access, RBAC, two-person override rule, refresh reuse, OTP lockout, webhook signatures, ledger immutability
 - ⬜ Number-plate retention job, PII masking in exports, file upload scanning
 - ⬜ Load testing
@@ -95,4 +107,4 @@ _Last updated: 2026-11-05_
 - ⬜ PM2 / Nginx / Certbot configs, GitHub Actions CI, backup/restore, rollback scripts
 
 ## Local ports (chosen to avoid other projects on this machine)
-API 4100 · Operator web 3101 · Postgres 57432 · Redis 57379
+API 4100 · Operator web 3101 · Staff app (web build) 3102 · Postgres 57432 · Redis 57379
