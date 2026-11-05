@@ -5,6 +5,10 @@ const prisma = new PrismaClient();
 
 async function main() {
   if (process.env.NODE_ENV === 'production' && process.env.ALLOW_SANDBOX_PROVIDERS !== 'true') throw new Error('Demo seed only runs in development or on a staging box with ALLOW_SANDBOX_PROVIDERS=true.');
+  // The default demo password is public (it's in this repo), so a deployed staging box must supply its own.
+  if (process.env.NODE_ENV === 'production' && (!process.env.SEED_PASSWORD || process.env.SEED_PASSWORD.length < 12)) {
+    throw new Error('Set SEED_PASSWORD (12+ chars) to seed a deployed environment; the default demo password is public.');
+  }
   const password = process.env.SEED_PASSWORD ?? 'Park2All@Demo123';
   await seedBase(prisma);
 

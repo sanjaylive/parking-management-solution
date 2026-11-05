@@ -75,9 +75,10 @@ npm run deploy:status   # recent runs
 ### 6. Demo data (staging only, optional, once)
 ```bash
 ssh deploy@<VPS_IP>
-cd /opt/park2all/current/api && set -a && . /opt/park2all/shared/api.env && set +a && node dist-seed/prisma/seed.js
+cd /opt/park2all/current/api && set -a && . /opt/park2all/shared/api.env && set +a \
+  && SEED_PASSWORD='<choose-a-strong-password>' node dist-seed/prisma/seed.js
 ```
-The seed refuses to run unless `ALLOW_SANDBOX_PROVIDERS=true`.
+The seed refuses to run unless `ALLOW_SANDBOX_PROVIDERS=true`, and in production it requires `SEED_PASSWORD` (12+ chars): the default demo password is in this public repo.
 
 ## Staging vs production
 No SMS or payment-gateway credentials exist yet. `vps-setup.sh` therefore writes `ALLOW_SANDBOX_PROVIDERS=true`, which has these effects:
