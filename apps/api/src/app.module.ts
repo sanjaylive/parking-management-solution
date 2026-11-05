@@ -25,6 +25,7 @@ import { MeController, PublicController } from './reservations/customer.controll
 import { ReservationsService } from './reservations/reservations.service';
 import { GateController, SessionsController } from './sessions/gate.controller';
 import { GateService } from './sessions/gate.service';
+import { OfflineSyncController, OfflineSyncService } from './sessions/offline-sync';
 import { OverridesController } from './staff/overrides.controller';
 import { ShiftsController } from './staff/shifts.controller';
 import { EntitlementModule } from './tenancy/entitlement.service';
@@ -50,12 +51,12 @@ import { OperatorController } from './tenancy/operator.controller';
   ],
   controllers: [
     HealthController, FacilitiesController, RatesController, GateController, SessionsController, PaymentsController,
-    ShiftsController, OverridesController, MeController, PublicController, DevicesController, AdminController, OperatorController,
+    ShiftsController, OverridesController, MeController, PublicController, DevicesController, AdminController, OperatorController, OfflineSyncController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
-    OccupancyService, PricingService, LedgerService, PaymentsService, InProcessTransport, BarrierService, GateService, ReservationsService,
+    OccupancyService, PricingService, LedgerService, PaymentsService, InProcessTransport, BarrierService, GateService, ReservationsService, OfflineSyncService,
   ],
 })
 export class AppModule {}

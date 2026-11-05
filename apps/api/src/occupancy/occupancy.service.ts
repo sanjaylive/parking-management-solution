@@ -146,7 +146,7 @@ export class OccupancyService {
       for (const p of pools) {
         await this.lockPool(tx, facilityId, p.vehicleClass);
         const actual = await tx.parkingSession.count({
-          where: { facilityId, vehicleClass: p.vehicleClass, status: { notIn: ['COMPLETED', 'CANCELLED', 'CREATED'] } },
+          where: { facilityId, vehicleClass: p.vehicleClass, status: { notIn: ['COMPLETED', 'CANCELLED', 'CREATED'] }, exitAt: null },
         });
         if (actual !== p.occupied) {
           await tx.parkingCapacityPool.update({ where: { id: p.id }, data: { occupied: actual } });

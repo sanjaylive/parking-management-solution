@@ -43,6 +43,8 @@ export interface ExitInput {
   credential: Credential;
   lostTicket?: boolean;
   occurredAt?: Date;
+  /** Offline sync: vehicle already left physically — never issue a barrier command. */
+  offline?: boolean;
 }
 
 const ACTIVE_STATES = ['CREATED', 'ENTRY_PENDING', 'ACTIVE', 'PAYMENT_PENDING', 'EXIT_READY', 'EXIT_IN_PROGRESS', 'EXCEPTION'] as const;
@@ -201,7 +203,7 @@ export class GateService {
         if (blacklisted) throw new DomainError('VEHICLE_BLACKLISTED', 'Vehicle is not permitted. Contact supervisor.', 403);
 
         const existing = await tx.parkingSession.findFirst({
-          where: { facilityId: facility.id, plateNormalized: plate!, status: { in: [...ACTIVE_STATES] } },
+          where: { facilityId: facility.id, plateNormalized: plate!, status: { in: [...ACTIVE_STATES] }, exitAt: null },
           select: { id: true, entryAt: true },
         });
         if (existing) throw Conflict('DUPLICATE_ACTIVE_SESSION', 'Vehicle already has an active session at this facility', existing);
@@ -213,7 +215,7 @@ export class GateService {
         if (!vehicleClass) throw new DomainError('VEHICLE_CLASS_REQUIRED', 'Select the vehicle type', 400);
 
         if (pass) {
-          const inUse = await tx.parkingSession.count({ where: { passId: pass.id, status: { in: [...ACTIVE_STATES] } } });
+          const inUse = await tx.parkingSession.count({ where: { passId: pass.id, status: { in: [...ACTIVE_STATES] }, exitAt: null } });
           if (inUse > 0) throw Conflict('PASS_IN_USE', 'This pass is already in use by another vehicle inside');
           const dayStart = new Date(at.getTime() - 24 * 3600_000);
           const entriesToday = await tx.parkingPassUsage.count({ where: { passId: pass.id, enteredAt: { gte: dayStart } } });
@@ -319,9 +321,9 @@ export class GateService {
       const claims = verifyQr(c.token);
       if (claims.k === 'S') where = { id: claims.id };
       else if (claims.k === 'R') where = { reservationId: claims.id };
-      else where = { passId: claims.id, status: { in: [...ACTIVE_STATES] } };
+      else where = { passId: claims.id, status: { in: [...ACTIVE_STATES] }, exitAt: null };
     } else if (c.type === 'TICKET') where = { ticket: { number: c.number.trim().toUpperCase() } };
-    else where = { plateNormalized: normalizePlate(c.plate), status: { in: [...ACTIVE_STATES] } };
+    else where = { plateNormalized: normalizePlate(c.plate), status: { in: [...ACTIVE_STATES] }, exitAt: null };
     const s = await tx.parkingSession.findFirst({ where: { ...where, tenantId: actor.tenantId, facilityId: facility.id }, orderBy: { entryAt: 'desc' } });
     if (!s) throw new DomainError('SESSION_NOT_FOUND', 'No parking session found for this vehicle/ticket at this facility', 404);
     return s;
@@ -459,7 +461,9 @@ export class GateService {
       { timeout: 15_000 },
     );
 
-    const barrier = await this.barrier.open({ tenantId: actor.tenantId, gateId: input.gateId, reason: 'EXIT', sessionId: result.s.id, requestedById: actor.userId });
+    const barrier: BarrierOutcome = input.offline
+      ? { mode: 'MANUAL', status: 'NO_DEVICE' }
+      : await this.barrier.open({ tenantId: actor.tenantId, gateId: input.gateId, reason: 'EXIT', sessionId: result.s.id, requestedById: actor.userId });
     this.live.emit(result.facility.id, 'session.completed', { sessionId: result.s.id });
     this.live.emit(result.facility.id, 'occupancy.changed', {});
     const durationMinutes = Math.ceil((exitAt.getTime() - result.s.entryAt.getTime()) / 60000);
@@ -472,5 +476,25 @@ export class GateService {
       },
       barrier,
     };
+  }
+
+  /**
+   * Offline exit where the vehicle left without the full fee being collected. Capacity is released
+   * (the space is physically free) but the session goes to EXCEPTION with the outstanding balance kept,
+   * so a supervisor must resolve it (waiver override or follow-up collection). Never silently written off.
+   */
+  async recordUnpaidOfflineExit(actor: Actor, p: { facilityId: string; sessionId: string; gateId?: string; exitAt: Date; outstandingMinor: number }) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "ParkingSession" WHERE id = ${p.sessionId}::uuid FOR UPDATE`;
+      const s = await tx.parkingSession.findFirstOrThrow({ where: { id: p.sessionId, tenantId: actor.tenantId } });
+      if (s.status === 'COMPLETED' || s.status === 'EXCEPTION') throw Conflict('SESSION_ALREADY_COMPLETED', 'Session already closed');
+      await tx.parkingSession.update({ where: { id: s.id }, data: { status: 'EXCEPTION', exitAt: p.exitAt, version: { increment: 1 } } });
+      await tx.parkingExit.create({ data: { sessionId: s.id, gateId: p.gateId, credentialType: 'PLATE_MANUAL', staffUserId: actor.userId, deviceId: actor.deviceId, at: p.exitAt } });
+      await this.occupancy.releaseForExit(tx, s.facilityId, s.vehicleClass);
+      await this.occupancy.releaseSlots(tx, s.id);
+      await tx.parkingSessionEvent.create({ data: { sessionId: s.id, type: 'OFFLINE_EXIT_UNPAID', from: s.status, to: 'EXCEPTION', actorId: actor.userId, data: { outstandingMinor: p.outstandingMinor } } });
+      await this.audit.log({ tenantId: actor.tenantId, actorId: actor.userId, actorKind: 'USER', action: 'session.offline_exit_unpaid', entityType: 'ParkingSession', entityId: s.id, after: { outstandingMinor: p.outstandingMinor } }, tx);
+      return { sessionId: s.id, status: 'EXCEPTION' as const, outstandingMinor: p.outstandingMinor };
+    });
   }
 }

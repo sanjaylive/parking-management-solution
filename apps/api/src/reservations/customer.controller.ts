@@ -112,7 +112,7 @@ export class MeController {
     if (!owned.length) return [];
     const sessions = await this.prisma.parkingSession.findMany({
       // Only sessions after the user added the vehicle — prevents seeing a previous owner's history.
-      where: { OR: owned.map((o) => ({ vehicleId: o.vehicleId, entryAt: { gte: o.createdAt } })), status: active === 'true' ? { notIn: ['COMPLETED', 'CANCELLED'] } : undefined },
+      where: { OR: owned.map((o) => ({ vehicleId: o.vehicleId, entryAt: { gte: o.createdAt } })), ...(active === 'true' ? { exitAt: null } : {}), status: active === 'true' ? { notIn: ['COMPLETED', 'CANCELLED'] } : undefined },
       include: { facility: { select: { name: true, addressLine: true, timezone: true } }, ticket: { select: { number: true, qrToken: true } }, assignments: { where: { releasedAt: null }, include: { slot: { select: { code: true } } } } },
       orderBy: { entryAt: 'desc' },
       take: 50,

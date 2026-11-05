@@ -92,6 +92,7 @@ export class SessionsController {
     const where: Prisma.ParkingSessionWhereInput = {
       tenantId: t.tenantId,
       facilityId: facilityId || (t.facilityIds ? { in: [...t.facilityIds] } : undefined),
+      ...(active === 'true' ? { exitAt: null } : {}),
       status: active === 'true' ? { notIn: ['COMPLETED', 'CANCELLED'] } : status ? (status as SessionStatus) : undefined,
       plateNormalized: q ? { contains: q.toUpperCase().replace(/[^A-Z0-9]/g, '') } : undefined,
     };
