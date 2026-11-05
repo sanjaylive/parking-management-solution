@@ -1,0 +1,19 @@
+name: park2all-dev
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: park2all
+      POSTGRES_PASSWORD: park2all
+      POSTGRES_DB: park2all
+    ports: ["127.0.0.1:57432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U park2all"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:57379:6379"]
+volumes:
+  pgdata:

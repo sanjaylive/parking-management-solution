@@ -1,0 +1,1739 @@
+// Park2All — multi-tenant smart parking schema.
+// Conventions:
+//  - All timestamps UTC (timestamptz). Facility local time via ParkingFacility.timezone (IANA).
+//  - Money stored as integer minor units (paise) in *Minor columns. Rates may be fractional -> Decimal.
+//  - Every tenant-owned table carries tenantId and is indexed by it.
+//  - Ledger + audit tables are append-only (enforced by DB trigger in migration).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum UserKind {
+  CUSTOMER
+  STAFF
+  PLATFORM
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETION_REQUESTED
+  DELETED
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CLOSED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum FacilityType {
+  MALL
+  AIRPORT
+  RAILWAY
+  HOSPITAL
+  OFFICE
+  RESIDENTIAL
+  HOTEL
+  RESTAURANT
+  PUBLIC
+  EVENT
+  CORPORATE
+  GARAGE
+  OTHER
+}
+
+enum OccupancyMode {
+  SLOT_BASED
+  CAPACITY_BASED
+}
+
+enum SlotState {
+  AVAILABLE
+  HELD
+  RESERVED
+  OCCUPIED
+  BLOCKED
+  OUT_OF_SERVICE
+}
+
+enum VehicleClass {
+  TWO_WHEELER
+  CAR
+  SUV
+  LCV
+  BUS
+  TRUCK
+  EV_CAR
+  EV_TWO_WHEELER
+}
+
+enum GateDirection {
+  ENTRY
+  EXIT
+  BOTH
+}
+
+enum GateStatus {
+  ONLINE
+  OFFLINE
+  DEGRADED
+  MAINTENANCE
+}
+
+enum ReservationStatus {
+  HELD
+  PENDING_PAYMENT
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  EXPIRED
+  NO_SHOW
+}
+
+enum SessionStatus {
+  CREATED
+  ENTRY_PENDING
+  ACTIVE
+  PAYMENT_PENDING
+  EXIT_READY
+  EXIT_IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  EXCEPTION
+}
+
+enum SessionSource {
+  WALK_IN
+  RESERVATION
+  PASS
+  CORPORATE
+  VALET
+}
+
+enum CredentialType {
+  QR
+  PLATE_MANUAL
+  PLATE_ANPR
+  TICKET
+  RFID
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  NETBANKING
+  WALLET
+  FASTAG
+  CORPORATE_BILLING
+  PASS
+}
+
+enum PaymentPurpose {
+  PARKING_SESSION
+  RESERVATION
+  PASS
+  SAAS_SUBSCRIPTION
+  CORPORATE_INVOICE
+}
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  REVENUE
+  EXPENSE
+  EQUITY
+}
+
+enum RateRuleKind {
+  FIXED_ENTRY
+  HOURLY
+  PER_MINUTE
+  DAILY_CAP
+  DAILY
+  OVERNIGHT
+  LOST_TICKET
+  VALET
+  EV_SURCHARGE
+}
+
+enum RateVersionStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum DiscountKind {
+  PERCENT
+  FLAT
+  FREE_MINUTES
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+  RECONCILED
+}
+
+enum OverrideType {
+  LOST_TICKET
+  FEE_WAIVER
+  FEE_ADJUSTMENT
+  PLATE_CORRECTION
+  MANUAL_BARRIER_OPEN
+  FORCE_EXIT
+  CAPACITY_OVERRIDE
+  ANPR_REVIEW
+}
+
+enum OverrideStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  EXECUTED
+}
+
+enum DeviceKind {
+  ANPR_CAMERA
+  QR_SCANNER
+  RFID_READER
+  BARRIER
+  SLOT_SENSOR
+  LED_DISPLAY
+  PRINTER
+  PAYMENT_TERMINAL
+  EV_CHARGER
+  KIOSK
+}
+
+enum DeviceStatus {
+  PROVISIONED
+  ONLINE
+  OFFLINE
+  FAULT
+  RETIRED
+}
+
+enum BarrierCommandStatus {
+  PENDING
+  SENT
+  ACKED
+  FAILED
+  TIMED_OUT
+}
+
+enum AnprReviewStatus {
+  AUTO_MATCHED
+  PENDING_REVIEW
+  CONFIRMED
+  CORRECTED
+  REJECTED
+}
+
+enum PassStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  CANCELLED
+}
+
+enum PassKind {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  EMPLOYEE
+  RESIDENT
+  FLEET
+  RESERVED_SLOT
+}
+
+enum ValetStatus {
+  REQUESTED
+  ASSIGNED
+  RECEIVED
+  PARKED
+  RETRIEVAL_REQUESTED
+  RETRIEVING
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+// ───────────────────────────── Identity ─────────────────────────────
+
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  kind            UserKind   @default(CUSTOMER)
+  phone           String?    @unique
+  email           String?    @unique
+  name            String?
+  passwordHash    String?
+  status          UserStatus @default(ACTIVE)
+  profileComplete Boolean    @default(false)
+  lastLoginAt     DateTime?  @db.Timestamptz(3)
+  createdAt       DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @db.Timestamptz(3)
+
+  sessions       UserSession[]
+  roles          UserRole[]
+  memberships    TenantMember[]
+  vehicles       VehicleOwner[]
+  deviceTokens   DeviceToken[]
+  reservations   ParkingReservation[]
+  staffProfile   StaffProfile[]
+  passes         ParkingPass[]
+  supportTickets SupportTicket[]
+  notifications  Notification[]
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique // e.g. PLATFORM_ADMIN, TENANT_OWNER, GATE_ATTENDANT
+  name        String
+  scope       String // PLATFORM | TENANT | CORPORATE
+  permissions RolePermission[]
+  users       UserRole[]
+  members     TenantMember[]
+}
+
+model Permission {
+  id    String           @id @default(uuid()) @db.Uuid
+  key   String           @unique // e.g. session.exit.override
+  name  String
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+// Platform-level roles (super admin, support). Tenant roles live on TenantMember.
+model UserRole {
+  userId String @db.Uuid
+  roleId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model UserSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId         String    @db.Uuid // refresh-token rotation family
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ip               String?
+  expiresAt        DateTime  @db.Timestamptz(3)
+  rotatedAt        DateTime? @db.Timestamptz(3)
+  revokedAt        DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model OtpChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  phone      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+  ip         String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([phone, createdAt])
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform  String
+  token     String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model IdempotencyKey {
+  id           String   @id @default(uuid()) @db.Uuid
+  scope        String // tenantId or "platform"
+  key          String
+  requestHash  String
+  responseCode Int?
+  responseBody Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([scope, key])
+}
+
+// ───────────────────────────── SaaS ─────────────────────────────
+
+model Tenant {
+  id           String       @id @default(uuid()) @db.Uuid
+  name         String
+  slug         String       @unique
+  legalName    String?
+  gstin        String?
+  status       TenantStatus @default(TRIAL)
+  contactEmail String?
+  contactPhone String?
+  settings     Json         @default("{}")
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
+
+  members       TenantMember[]
+  subscriptions Subscription[]
+  facilities    ParkingFacility[]
+  corporates    CorporateAccount[]
+}
+
+model TenantMember {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  userId      String   @db.Uuid
+  roleId      String   @db.Uuid
+  // null = all facilities in tenant
+  facilityIds String[] @db.Uuid
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role     @relation(fields: [roleId], references: [id])
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+model SubscriptionPlan {
+  id                String                    @id @default(uuid()) @db.Uuid
+  code              String                    @unique // STARTER, GROWTH, BUSINESS, ENTERPRISE
+  name              String
+  priceMonthlyMinor Int
+  priceYearlyMinor  Int
+  currency          String                    @default("INR")
+  active            Boolean                   @default(true)
+  entitlements      SubscriptionEntitlement[]
+  subscriptions     Subscription[]
+  createdAt         DateTime                  @default(now()) @db.Timestamptz(3)
+}
+
+model SubscriptionEntitlement {
+  id     String           @id @default(uuid()) @db.Uuid
+  planId String           @db.Uuid
+  plan   SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  key    String // maxFacilities, maxGates, maxStaff, monthlySessions, feature.anpr, feature.corporate, feature.api
+  value  Int // -1 = unlimited; 0/1 for feature flags
+
+  @@unique([planId, key])
+}
+
+model Subscription {
+  id                 String                @id @default(uuid()) @db.Uuid
+  tenantId           String                @db.Uuid
+  planId             String                @db.Uuid
+  status             SubscriptionStatus    @default(TRIALING)
+  billingCycle       String                @default("MONTHLY")
+  currentPeriodStart DateTime              @db.Timestamptz(3)
+  currentPeriodEnd   DateTime              @db.Timestamptz(3)
+  cancelAtPeriodEnd  Boolean               @default(false)
+  createdAt          DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @db.Timestamptz(3)
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan               SubscriptionPlan      @relation(fields: [planId], references: [id])
+  invoices           SubscriptionInvoice[]
+
+  @@index([tenantId])
+}
+
+model SubscriptionInvoice {
+  id             String       @id @default(uuid()) @db.Uuid
+  subscriptionId String       @db.Uuid
+  tenantId       String       @db.Uuid
+  number         String       @unique
+  amountMinor    Int
+  taxMinor       Int          @default(0)
+  currency       String       @default("INR")
+  periodStart    DateTime     @db.Timestamptz(3)
+  periodEnd      DateTime     @db.Timestamptz(3)
+  dueAt          DateTime     @db.Timestamptz(3)
+  paidAt         DateTime?    @db.Timestamptz(3)
+  status         String       @default("OPEN") // OPEN, PAID, VOID, OVERDUE
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId])
+}
+
+// ───────────────────────────── Parking structure ─────────────────────────────
+
+model City {
+  id         String            @id @default(uuid()) @db.Uuid
+  name       String
+  state      String
+  country    String            @default("IN")
+  active     Boolean           @default(true)
+  facilities ParkingFacility[]
+
+  @@unique([name, state, country])
+}
+
+model ParkingFacility {
+  id                           String        @id @default(uuid()) @db.Uuid
+  tenantId                     String        @db.Uuid
+  cityId                       String?       @db.Uuid
+  code                         String // short code unique per tenant, printed on tickets
+  name                         String
+  type                         FacilityType  @default(PUBLIC)
+  occupancyMode                OccupancyMode @default(CAPACITY_BASED)
+  timezone                     String        @default("Asia/Kolkata")
+  currency                     String        @default("INR")
+  addressLine                  String
+  latitude                     Decimal       @db.Decimal(9, 6)
+  longitude                    Decimal       @db.Decimal(9, 6)
+  open24h                      Boolean       @default(true)
+  openingHours                 Json? // {mon:[["08:00","22:00"]],...}
+  covered                      Boolean       @default(false)
+  hasEv                        Boolean       @default(false)
+  hasValet                     Boolean       @default(false)
+  heightLimitCm                Int?
+  reservable                   Boolean       @default(true)
+  isPublished                  Boolean       @default(false)
+  photos                       String[]
+  rules                        String?
+  cancellationPolicy           Json? // {freeUntilMinutesBefore:60, feePercent:20}
+  // Offline + safety policy
+  offlineMaxProvisionalEntries Int           @default(50)
+  anprConfidenceThreshold      Decimal       @default(0.90) @db.Decimal(4, 3)
+  failSafeBarrierPolicy        String        @default("FAIL_CLOSED") // FAIL_CLOSED | FAIL_OPEN_EXIT_ONLY
+  plateCountry                 String        @default("IN")
+  graceMinutes                 Int           @default(10)
+  reservationHoldMinutes       Int           @default(10)
+  createdAt                    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt                    DateTime      @updatedAt @db.Timestamptz(3)
+
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  city         City?                 @relation(fields: [cityId], references: [id])
+  buildings    ParkingBuilding[]
+  floors       ParkingFloor[]
+  zones        ParkingZone[]
+  slots        ParkingSlot[]
+  gates        ParkingGate[]
+  pools        ParkingCapacityPool[]
+  amenities    ParkingAmenity[]
+  restrictions ParkingRestriction[]
+  ratePlans    ParkingRatePlan[]
+  sessions     ParkingSession[]
+  reservations ParkingReservation[]
+  devices      HardwareDevice[]
+  shifts       StaffShift[]
+  reviews      FacilityReview[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([cityId])
+  @@index([latitude, longitude])
+}
+
+model ParkingBuilding {
+  id         String          @id @default(uuid()) @db.Uuid
+  tenantId   String          @db.Uuid
+  facilityId String          @db.Uuid
+  name       String
+  facility   ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  floors     ParkingFloor[]
+
+  @@index([tenantId])
+}
+
+model ParkingFloor {
+  id         String           @id @default(uuid()) @db.Uuid
+  tenantId   String           @db.Uuid
+  facilityId String           @db.Uuid
+  buildingId String?          @db.Uuid
+  name       String
+  level      Int
+  facility   ParkingFacility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  building   ParkingBuilding? @relation(fields: [buildingId], references: [id])
+  zones      ParkingZone[]
+
+  @@unique([facilityId, level, buildingId])
+  @@index([tenantId])
+}
+
+model ParkingZone {
+  id             String          @id @default(uuid()) @db.Uuid
+  tenantId       String          @db.Uuid
+  facilityId     String          @db.Uuid
+  floorId        String?         @db.Uuid
+  code           String
+  name           String
+  vehicleClasses VehicleClass[]
+  isEv           Boolean         @default(false)
+  isAccessible   Boolean         @default(false)
+  isReservedOnly Boolean         @default(false)
+  isStaffOnly    Boolean         @default(false)
+  isCorporate    Boolean         @default(false)
+  layout         Json? // map rendering: {rows: n, cols: m}
+  facility       ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  floor          ParkingFloor?   @relation(fields: [floorId], references: [id])
+  slots          ParkingSlot[]
+
+  @@unique([facilityId, code])
+  @@index([tenantId])
+}
+
+model ParkingSlot {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @db.Uuid
+  facilityId     String              @db.Uuid
+  zoneId         String              @db.Uuid
+  code           String
+  row            String?
+  position       Int?
+  vehicleClass   VehicleClass
+  state          SlotState           @default(AVAILABLE)
+  isEv           Boolean             @default(false)
+  isAccessible   Boolean             @default(false)
+  sensorDeviceId String?             @db.Uuid
+  version        Int                 @default(0)
+  updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
+  facility       ParkingFacility     @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  zone           ParkingZone         @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  assignments    ParkingAssignment[]
+
+  @@unique([facilityId, code])
+  @@index([tenantId])
+  @@index([facilityId, state, vehicleClass])
+}
+
+model ParkingGate {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @db.Uuid
+  facilityId      String           @db.Uuid
+  code            String
+  name            String
+  direction       GateDirection
+  status          GateStatus       @default(ONLINE)
+  lastHeartbeatAt DateTime?        @db.Timestamptz(3)
+  facility        ParkingFacility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  devices         HardwareDevice[]
+  barrierCommands BarrierCommand[]
+
+  @@unique([facilityId, code])
+  @@index([tenantId])
+}
+
+// Capacity counters per facility + vehicle class. Source of truth for availability
+// in both slot-based and capacity-based facilities. Locked FOR UPDATE on every change.
+model ParkingCapacityPool {
+  id                 String          @id @default(uuid()) @db.Uuid
+  tenantId           String          @db.Uuid
+  facilityId         String          @db.Uuid
+  vehicleClass       VehicleClass
+  totalCapacity      Int
+  occupied           Int             @default(0)
+  reservedHeld       Int             @default(0) // confirmed reservations not yet entered
+  blocked            Int             @default(0)
+  reservableCapacity Int             @default(0) // max units bookable in advance
+  sensorCount        Int? // last reported occupancy from sensors/counters
+  sensorReportedAt   DateTime?       @db.Timestamptz(3)
+  updatedAt          DateTime        @updatedAt @db.Timestamptz(3)
+  facility           ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@unique([facilityId, vehicleClass])
+  @@index([tenantId])
+}
+
+model ParkingRestriction {
+  id         String          @id @default(uuid()) @db.Uuid
+  tenantId   String          @db.Uuid
+  facilityId String          @db.Uuid
+  kind       String // HEIGHT, VEHICLE_CLASS, TIME_WINDOW, PERMIT_ONLY
+  value      Json
+  facility   ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model ParkingAmenity {
+  id         String          @id @default(uuid()) @db.Uuid
+  facilityId String          @db.Uuid
+  key        String // CCTV, SECURITY_GUARD, EV_CHARGING, VALET, WASHROOM, ACCESSIBLE, COVERED
+  label      String
+  facility   ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@unique([facilityId, key])
+}
+
+model FacilityReview {
+  id         String          @id @default(uuid()) @db.Uuid
+  facilityId String          @db.Uuid
+  userId     String          @db.Uuid
+  rating     Int
+  comment    String?
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+  facility   ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@unique([facilityId, userId])
+}
+
+// ───────────────────────────── Vehicles ─────────────────────────────
+
+model VehicleType {
+  id           String       @id @default(uuid()) @db.Uuid
+  vehicleClass VehicleClass @unique
+  label        String
+  icon         String?
+}
+
+model Vehicle {
+  id              String               @id @default(uuid()) @db.Uuid
+  plateNormalized String               @unique
+  plateDisplay    String
+  country         String               @default("IN")
+  vehicleClass    VehicleClass
+  make            String?
+  model           String?
+  color           String?
+  isEv            Boolean              @default(false)
+  createdAt       DateTime             @default(now()) @db.Timestamptz(3)
+  owners          VehicleOwner[]
+  sessions        ParkingSession[]
+  reservations    ParkingReservation[]
+  passVehicles    ParkingPassVehicle[]
+}
+
+model VehicleOwner {
+  userId    String   @db.Uuid
+  vehicleId String   @db.Uuid
+  nickname  String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, vehicleId])
+}
+
+model VehicleWhitelist {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @db.Uuid
+  facilityId      String?   @db.Uuid
+  corporateId     String?   @db.Uuid
+  plateNormalized String
+  reason          String?
+  validFrom       DateTime  @db.Timestamptz(3)
+  validUntil      DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId, plateNormalized])
+}
+
+model VehicleBlacklist {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  plateNormalized String
+  reason          String
+  createdById     String   @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([tenantId, plateNormalized])
+}
+
+// ───────────────────────────── Pricing ─────────────────────────────
+
+model ParkingRatePlan {
+  id           String               @id @default(uuid()) @db.Uuid
+  tenantId     String               @db.Uuid
+  facilityId   String               @db.Uuid
+  name         String
+  vehicleClass VehicleClass
+  active       Boolean              @default(true)
+  facility     ParkingFacility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  versions     ParkingRateVersion[]
+  createdAt    DateTime             @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId])
+  @@index([facilityId, vehicleClass, active])
+}
+
+model ParkingRateVersion {
+  id            String            @id @default(uuid()) @db.Uuid
+  tenantId      String            @db.Uuid
+  ratePlanId    String            @db.Uuid
+  version       Int
+  status        RateVersionStatus @default(DRAFT)
+  effectiveFrom DateTime          @db.Timestamptz(3)
+  // Whole rule-set as immutable JSON (validated by pricing engine schema). Also mirrored to rules for querying.
+  definition    Json
+  publishedAt   DateTime?         @db.Timestamptz(3)
+  publishedById String?           @db.Uuid
+  ratePlan      ParkingRatePlan   @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+  rules         ParkingRateRule[]
+  createdAt     DateTime          @default(now()) @db.Timestamptz(3)
+
+  @@unique([ratePlanId, version])
+  @@index([tenantId])
+}
+
+model ParkingRateRule {
+  id        String             @id @default(uuid()) @db.Uuid
+  versionId String             @db.Uuid
+  kind      RateRuleKind
+  amount    Decimal            @db.Decimal(12, 4) // rupees, may be fractional for per-minute
+  config    Json               @default("{}")
+  version   ParkingRateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+}
+
+model ParkingCoupon {
+  id               String       @id @default(uuid()) @db.Uuid
+  tenantId         String?      @db.Uuid // null = platform-wide promotion
+  code             String
+  kind             DiscountKind
+  value            Decimal      @db.Decimal(12, 4)
+  maxDiscountMinor Int?
+  validFrom        DateTime     @db.Timestamptz(3)
+  validUntil       DateTime     @db.Timestamptz(3)
+  maxRedemptions   Int?
+  redemptions      Int          @default(0)
+  facilityIds      String[]     @db.Uuid
+  active           Boolean      @default(true)
+  createdAt        DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@unique([tenantId, code])
+}
+
+model ParkingDiscount {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  sessionId     String?  @db.Uuid
+  reservationId String?  @db.Uuid
+  couponId      String?  @db.Uuid
+  amountMinor   Int
+  reason        String
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId])
+}
+
+// ───────────────────────────── Reservations ─────────────────────────────
+
+model ParkingReservation {
+  id            String                     @id @default(uuid()) @db.Uuid
+  tenantId      String                     @db.Uuid
+  facilityId    String                     @db.Uuid
+  userId        String                     @db.Uuid
+  vehicleId     String                     @db.Uuid
+  vehicleClass  VehicleClass
+  code          String                     @unique // human code, e.g. P2A-7KD3QX
+  status        ReservationStatus          @default(HELD)
+  startsAt      DateTime                   @db.Timestamptz(3)
+  endsAt        DateTime                   @db.Timestamptz(3)
+  holdExpiresAt DateTime?                  @db.Timestamptz(3)
+  slotId        String?                    @db.Uuid
+  amountMinor   Int
+  paidMinor     Int                        @default(0)
+  prepaid       Boolean                    @default(true)
+  cancelledAt   DateTime?                  @db.Timestamptz(3)
+  cancelReason  String?
+  version       Int                        @default(0)
+  createdAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
+  facility      ParkingFacility            @relation(fields: [facilityId], references: [id])
+  user          User                       @relation(fields: [userId], references: [id])
+  vehicle       Vehicle                    @relation(fields: [vehicleId], references: [id])
+  priceSnapshot ReservationPriceSnapshot?
+  history       ReservationStatusHistory[]
+  session       ParkingSession?
+
+  @@index([tenantId])
+  @@index([facilityId, status, startsAt])
+  @@index([userId])
+}
+
+model ReservationPriceSnapshot {
+  id            String             @id @default(uuid()) @db.Uuid
+  reservationId String             @unique @db.Uuid
+  rateVersionId String             @db.Uuid
+  breakdown     Json
+  totalMinor    Int
+  createdAt     DateTime           @default(now()) @db.Timestamptz(3)
+  reservation   ParkingReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+}
+
+model ReservationStatusHistory {
+  id            String             @id @default(uuid()) @db.Uuid
+  reservationId String             @db.Uuid
+  from          ReservationStatus?
+  to            ReservationStatus
+  actorId       String?            @db.Uuid
+  reason        String?
+  at            DateTime           @default(now()) @db.Timestamptz(3)
+  reservation   ParkingReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId])
+}
+
+// ───────────────────────────── Sessions ─────────────────────────────
+
+model ParkingSession {
+  id              String                     @id @default(uuid()) @db.Uuid
+  tenantId        String                     @db.Uuid
+  facilityId      String                     @db.Uuid
+  vehicleId       String?                    @db.Uuid
+  plateNormalized String
+  vehicleClass    VehicleClass
+  status          SessionStatus              @default(CREATED)
+  source          SessionSource
+  reservationId   String?                    @unique @db.Uuid
+  passId          String?                    @db.Uuid
+  corporateId     String?                    @db.Uuid
+  rateVersionId   String?                    @db.Uuid // snapshotted at entry
+  entryAt         DateTime                   @db.Timestamptz(3)
+  exitAt          DateTime?                  @db.Timestamptz(3)
+  amountDueMinor  Int                        @default(0)
+  amountPaidMinor Int                        @default(0)
+  isProvisional   Boolean                    @default(false) // created offline, pending sync review
+  isLostTicket    Boolean                    @default(false)
+  version         Int                        @default(0)
+  createdAt       DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                   @updatedAt @db.Timestamptz(3)
+  facility        ParkingFacility            @relation(fields: [facilityId], references: [id])
+  vehicle         Vehicle?                   @relation(fields: [vehicleId], references: [id])
+  reservation     ParkingReservation?        @relation(fields: [reservationId], references: [id])
+  pass            ParkingPass?               @relation(fields: [passId], references: [id])
+  events          ParkingSessionEvent[]
+  entry           ParkingEntry?
+  exit            ParkingExit?
+  ticket          ParkingTicket?
+  assignments     ParkingAssignment[]
+  feeCalculations ParkingFeeCalculation[]
+  adjustments     ParkingSessionAdjustment[]
+  valetRequests   ValetRequest[]
+  // Partial unique index for "one active session per plate per facility" is created in SQL migration.
+
+  @@index([tenantId])
+  @@index([facilityId, status])
+  @@index([facilityId, plateNormalized])
+  @@index([entryAt])
+}
+
+model ParkingSessionEvent {
+  id        String         @id @default(uuid()) @db.Uuid
+  sessionId String         @db.Uuid
+  type      String // ENTERED, FEE_QUOTED, PAYMENT_RECEIVED, EXIT_CONFIRMED, OVERRIDE, PLATE_CORRECTED...
+  from      SessionStatus?
+  to        SessionStatus?
+  actorId   String?        @db.Uuid
+  deviceId  String?        @db.Uuid
+  data      Json           @default("{}")
+  at        DateTime       @default(now()) @db.Timestamptz(3)
+  session   ParkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, at])
+}
+
+model ParkingEntry {
+  id             String         @id @default(uuid()) @db.Uuid
+  sessionId      String         @unique @db.Uuid
+  gateId         String?        @db.Uuid
+  credentialType CredentialType
+  staffUserId    String?        @db.Uuid
+  deviceId       String?        @db.Uuid
+  photoKey       String?
+  anprEventId    String?        @db.Uuid
+  at             DateTime       @db.Timestamptz(3)
+  session        ParkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model ParkingExit {
+  id             String         @id @default(uuid()) @db.Uuid
+  sessionId      String         @unique @db.Uuid
+  gateId         String?        @db.Uuid
+  credentialType CredentialType
+  staffUserId    String?        @db.Uuid
+  deviceId       String?        @db.Uuid
+  photoKey       String?
+  at             DateTime       @db.Timestamptz(3)
+  session        ParkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model ParkingTicket {
+  id        String         @id @default(uuid()) @db.Uuid
+  sessionId String         @unique @db.Uuid
+  number    String         @unique // FACILITYCODE-YYMMDD-NNNNNN
+  qrToken   String         @unique
+  issuedAt  DateTime       @default(now()) @db.Timestamptz(3)
+  lost      Boolean        @default(false)
+  session   ParkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model ParkingAssignment {
+  id         String         @id @default(uuid()) @db.Uuid
+  sessionId  String         @db.Uuid
+  slotId     String         @db.Uuid
+  assignedAt DateTime       @default(now()) @db.Timestamptz(3)
+  releasedAt DateTime?      @db.Timestamptz(3)
+  session    ParkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  slot       ParkingSlot    @relation(fields: [slotId], references: [id])
+
+  @@index([slotId, releasedAt])
+}
+
+model ParkingFeeCalculation {
+  id            String         @id @default(uuid()) @db.Uuid
+  sessionId     String         @db.Uuid
+  rateVersionId String?        @db.Uuid
+  calculatedAt  DateTime       @default(now()) @db.Timestamptz(3)
+  billedUntil   DateTime       @db.Timestamptz(3)
+  grossMinor    Int
+  discountMinor Int
+  netMinor      Int
+  breakdown     Json
+  session       ParkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model ParkingSessionAdjustment {
+  id          String         @id @default(uuid()) @db.Uuid
+  sessionId   String         @db.Uuid
+  overrideId  String?        @db.Uuid
+  amountMinor Int // negative = waiver
+  reason      String
+  actorId     String         @db.Uuid
+  at          DateTime       @default(now()) @db.Timestamptz(3)
+  session     ParkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────────── Payments & ledger ─────────────────────────────
+
+model Payment {
+  id                    String           @id @default(uuid()) @db.Uuid
+  tenantId              String?          @db.Uuid // null for SaaS subscription payments collected by platform
+  purpose               PaymentPurpose
+  sessionId             String?          @db.Uuid
+  reservationId         String?          @db.Uuid
+  passId                String?          @db.Uuid
+  subscriptionInvoiceId String?          @db.Uuid
+  userId                String?          @db.Uuid
+  method                PaymentMethod?
+  provider              String // sandbox | razorpay | cash
+  providerOrderId       String?          @unique
+  amountMinor           Int
+  refundedMinor         Int              @default(0)
+  currency              String           @default("INR")
+  status                PaymentStatus    @default(CREATED)
+  collectedByUserId     String?          @db.Uuid // cash
+  shiftId               String?          @db.Uuid
+  succeededAt           DateTime?        @db.Timestamptz(3)
+  receiptNumber         String?          @unique
+  createdAt             DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime         @updatedAt @db.Timestamptz(3)
+  attempts              PaymentAttempt[]
+  refunds               Refund[]
+
+  @@index([tenantId, createdAt])
+  @@index([sessionId])
+  @@index([reservationId])
+}
+
+model PaymentAttempt {
+  id                String         @id @default(uuid()) @db.Uuid
+  paymentId         String         @db.Uuid
+  providerPaymentId String?
+  status            PaymentStatus
+  method            PaymentMethod?
+  errorCode         String?
+  raw               Json?
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  payment           Payment        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+}
+
+model PaymentWebhookEvent {
+  id              String    @id @default(uuid()) @db.Uuid
+  provider        String
+  providerEventId String
+  type            String
+  signatureValid  Boolean
+  payload         Json
+  processedAt     DateTime? @db.Timestamptz(3)
+  error           String?
+  receivedAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@unique([provider, providerEventId])
+}
+
+model Refund {
+  id               String       @id @default(uuid()) @db.Uuid
+  paymentId        String       @db.Uuid
+  tenantId         String?      @db.Uuid
+  amountMinor      Int
+  status           RefundStatus @default(REQUESTED)
+  reason           String
+  providerRefundId String?      @unique
+  requestedById    String       @db.Uuid
+  createdAt        DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @db.Timestamptz(3)
+  payment          Payment      @relation(fields: [paymentId], references: [id])
+}
+
+model Invoice {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  number      String   @unique
+  kind        String // RECEIPT, TAX_INVOICE, CORPORATE
+  paymentId   String?  @db.Uuid
+  amountMinor Int
+  taxMinor    Int      @default(0)
+  data        Json
+  pdfKey      String?
+  issuedAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId])
+}
+
+model FinancialLedgerAccount {
+  id       String                 @id @default(uuid()) @db.Uuid
+  tenantId String?                @db.Uuid // null = platform account
+  code     String // CASH_DRAWER, GATEWAY_CLEARING, PARKING_REVENUE, PLATFORM_COMMISSION, TENANT_PAYABLE, REFUNDS
+  name     String
+  type     LedgerAccountType
+  entries  FinancialLedgerEntry[]
+
+  @@unique([tenantId, code])
+}
+
+// Immutable double-entry. A transaction = rows sharing txnId whose debits == credits.
+model FinancialLedgerEntry {
+  id          String                 @id @default(uuid()) @db.Uuid
+  txnId       String                 @db.Uuid
+  tenantId    String?                @db.Uuid
+  accountId   String                 @db.Uuid
+  debitMinor  Int                    @default(0)
+  creditMinor Int                    @default(0)
+  currency    String                 @default("INR")
+  refType     String // PAYMENT, REFUND, SETTLEMENT, ADJUSTMENT
+  refId       String                 @db.Uuid
+  memo        String?
+  createdAt   DateTime               @default(now()) @db.Timestamptz(3)
+  account     FinancialLedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([txnId])
+  @@index([refType, refId])
+}
+
+model Settlement {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @db.Uuid
+  periodStart     DateTime  @db.Timestamptz(3)
+  periodEnd       DateTime  @db.Timestamptz(3)
+  grossMinor      Int
+  commissionMinor Int
+  refundsMinor    Int
+  netMinor        Int
+  status          String    @default("PENDING") // PENDING, PAID, ON_HOLD
+  paidAt          DateTime? @db.Timestamptz(3)
+  utr             String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@unique([tenantId, periodStart, periodEnd])
+}
+
+model ReconciliationRecord {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String?  @db.Uuid
+  kind       String // GATEWAY, CASH_SHIFT, OCCUPANCY
+  refId      String?  @db.Uuid
+  expected   Int
+  actual     Int
+  difference Int
+  status     String   @default("OPEN") // OPEN, RESOLVED
+  notes      String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId, kind])
+}
+
+model CommissionRule {
+  id        String         @id @default(uuid()) @db.Uuid
+  tenantId  String?        @db.Uuid // null = platform default
+  purpose   PaymentPurpose
+  percentBp Int // basis points
+  flatMinor Int            @default(0)
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
+}
+
+// ───────────────────────────── Staff ─────────────────────────────
+
+model StaffProfile {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  userId       String   @db.Uuid
+  employeeCode String?
+  pinHash      String? // quick re-auth at kiosk
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([tenantId, userId])
+}
+
+model StaffShift {
+  id                String            @id @default(uuid()) @db.Uuid
+  tenantId          String            @db.Uuid
+  facilityId        String            @db.Uuid
+  userId            String            @db.Uuid
+  gateId            String?           @db.Uuid
+  status            ShiftStatus       @default(OPEN)
+  openedAt          DateTime          @default(now()) @db.Timestamptz(3)
+  closedAt          DateTime?         @db.Timestamptz(3)
+  openingFloatMinor Int               @default(0)
+  expectedCashMinor Int?
+  declaredCashMinor Int?
+  varianceMinor     Int?
+  notes             String?
+  reconciledById    String?           @db.Uuid
+  facility          ParkingFacility   @relation(fields: [facilityId], references: [id])
+  cashRecords       ShiftCashRecord[]
+
+  @@index([tenantId])
+  @@index([userId, status])
+}
+
+model ShiftCashRecord {
+  id          String     @id @default(uuid()) @db.Uuid
+  shiftId     String     @db.Uuid
+  paymentId   String?    @db.Uuid
+  kind        String // COLLECTION, PAYOUT, FLOAT_IN, DROP
+  amountMinor Int
+  note        String?
+  at          DateTime   @default(now()) @db.Timestamptz(3)
+  shift       StaffShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([shiftId])
+}
+
+model StaffAssignment {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  userId     String   @db.Uuid
+  facilityId String   @db.Uuid
+  gateId     String?  @db.Uuid
+  startsAt   DateTime @db.Timestamptz(3)
+  endsAt     DateTime @db.Timestamptz(3)
+
+  @@index([tenantId, facilityId])
+}
+
+model StaffActivity {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  userId     String   @db.Uuid
+  facilityId String?  @db.Uuid
+  action     String
+  data       Json     @default("{}")
+  at         DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId, userId, at])
+}
+
+model SupervisorOverride {
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @db.Uuid
+  facilityId    String         @db.Uuid
+  type          OverrideType
+  status        OverrideStatus @default(REQUESTED)
+  sessionId     String?        @db.Uuid
+  gateId        String?        @db.Uuid
+  requestedById String         @db.Uuid
+  approvedById  String?        @db.Uuid
+  reason        String
+  payload       Json           @default("{}")
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  decidedAt     DateTime?      @db.Timestamptz(3)
+
+  @@index([tenantId, status])
+}
+
+// ───────────────────────────── Hardware ─────────────────────────────
+
+model HardwareDevice {
+  id          String             @id @default(uuid()) @db.Uuid
+  tenantId    String             @db.Uuid
+  facilityId  String             @db.Uuid
+  gateId      String?            @db.Uuid
+  kind        DeviceKind
+  vendor      String // simulator, hikvision, zkteco, ...
+  model       String?
+  serial      String?
+  adapter     String // adapter key used by gateway
+  config      Json               @default("{}")
+  status      DeviceStatus       @default(PROVISIONED)
+  lastSeenAt  DateTime?          @db.Timestamptz(3)
+  firmware    String?
+  createdAt   DateTime           @default(now()) @db.Timestamptz(3)
+  facility    ParkingFacility    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  gate        ParkingGate?       @relation(fields: [gateId], references: [id])
+  credentials DeviceCredential[]
+  events      DeviceEvent[]
+  alerts      HardwareAlert[]
+
+  @@index([tenantId])
+  @@index([facilityId, kind])
+}
+
+model DeviceCredential {
+  id              String         @id @default(uuid()) @db.Uuid
+  deviceId        String         @db.Uuid
+  keyId           String         @unique
+  secretEncrypted String // AES-256-GCM, key from env
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  revokedAt       DateTime?      @db.Timestamptz(3)
+  device          HardwareDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+}
+
+model DeviceEvent {
+  id         String         @id @default(uuid()) @db.Uuid
+  tenantId   String         @db.Uuid
+  deviceId   String         @db.Uuid
+  eventId    String // device-generated, for dedupe
+  type       String
+  payload    Json
+  occurredAt DateTime       @db.Timestamptz(3)
+  receivedAt DateTime       @default(now()) @db.Timestamptz(3)
+  processed  Boolean        @default(false)
+  device     HardwareDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, eventId])
+  @@index([tenantId, receivedAt])
+}
+
+model CameraRecognitionEvent {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @db.Uuid
+  facilityId      String           @db.Uuid
+  gateId          String?          @db.Uuid
+  deviceId        String           @db.Uuid
+  deviceEventId   String           @db.Uuid
+  direction       GateDirection
+  plateRaw        String
+  plateNormalized String
+  confidence      Decimal          @db.Decimal(4, 3)
+  imageKey        String?
+  reviewStatus    AnprReviewStatus
+  reviewedById    String?          @db.Uuid
+  correctedPlate  String?
+  sessionId       String?          @db.Uuid
+  occurredAt      DateTime         @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId, reviewStatus])
+  @@index([facilityId, plateNormalized, occurredAt])
+}
+
+model BarrierCommand {
+  id            String               @id @default(uuid()) @db.Uuid
+  tenantId      String               @db.Uuid
+  gateId        String               @db.Uuid
+  deviceId      String?              @db.Uuid
+  action        String // OPEN, CLOSE, HOLD_OPEN
+  reason        String // ENTRY, EXIT, OVERRIDE, EMERGENCY
+  sessionId     String?              @db.Uuid
+  overrideId    String?              @db.Uuid
+  requestedById String?              @db.Uuid
+  status        BarrierCommandStatus @default(PENDING)
+  attempts      Int                  @default(0)
+  error         String?
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+  sentAt        DateTime?            @db.Timestamptz(3)
+  ackedAt       DateTime?            @db.Timestamptz(3)
+  gate          ParkingGate          @relation(fields: [gateId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([gateId, status])
+}
+
+model SensorReading {
+  id       String   @id @default(uuid()) @db.Uuid
+  tenantId String   @db.Uuid
+  deviceId String   @db.Uuid
+  slotId   String?  @db.Uuid
+  occupied Boolean?
+  count    Int?
+  at       DateTime @db.Timestamptz(3)
+
+  @@index([deviceId, at])
+}
+
+model HardwareAlert {
+  id         String         @id @default(uuid()) @db.Uuid
+  tenantId   String         @db.Uuid
+  deviceId   String         @db.Uuid
+  severity   AlertSeverity
+  code       String
+  message    String
+  resolvedAt DateTime?      @db.Timestamptz(3)
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+  device     HardwareDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, resolvedAt])
+}
+
+// Offline gate events uploaded on reconnection.
+model OfflineSyncBatch {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  facilityId String   @db.Uuid
+  deviceId   String?  @db.Uuid
+  userId     String?  @db.Uuid
+  receivedAt DateTime @default(now()) @db.Timestamptz(3)
+  eventCount Int
+  accepted   Int
+  duplicates Int
+  conflicts  Int
+  results    Json
+}
+
+// ───────────────────────────── Passes ─────────────────────────────
+
+model ParkingPassPlan {
+  id               String        @id @default(uuid()) @db.Uuid
+  tenantId         String        @db.Uuid
+  name             String
+  kind             PassKind
+  vehicleClass     VehicleClass
+  durationDays     Int
+  priceMinor       Int
+  facilityIds      String[]      @db.Uuid
+  maxEntriesPerDay Int?
+  allowedWindows   Json? // [{days:[1..7], from:"08:00", to:"20:00"}]
+  maxVehicles      Int           @default(1)
+  reservedSlot     Boolean       @default(false)
+  active           Boolean       @default(true)
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  passes           ParkingPass[]
+
+  @@index([tenantId])
+}
+
+model ParkingPass {
+  id              String               @id @default(uuid()) @db.Uuid
+  tenantId        String               @db.Uuid
+  planId          String               @db.Uuid
+  userId          String?              @db.Uuid
+  corporateId     String?              @db.Uuid
+  number          String               @unique
+  status          PassStatus           @default(PENDING_PAYMENT)
+  validFrom       DateTime             @db.Timestamptz(3)
+  validUntil      DateTime             @db.Timestamptz(3)
+  autoRenew       Boolean              @default(false)
+  slotId          String?              @db.Uuid
+  suspendedReason String?
+  createdAt       DateTime             @default(now()) @db.Timestamptz(3)
+  plan            ParkingPassPlan      @relation(fields: [planId], references: [id])
+  user            User?                @relation(fields: [userId], references: [id])
+  vehicles        ParkingPassVehicle[]
+  usages          ParkingPassUsage[]
+  sessions        ParkingSession[]
+
+  @@index([tenantId, status])
+}
+
+model ParkingPassVehicle {
+  passId    String      @db.Uuid
+  vehicleId String      @db.Uuid
+  addedAt   DateTime    @default(now()) @db.Timestamptz(3)
+  pass      ParkingPass @relation(fields: [passId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle     @relation(fields: [vehicleId], references: [id])
+
+  @@id([passId, vehicleId])
+}
+
+model ParkingPassUsage {
+  id         String      @id @default(uuid()) @db.Uuid
+  passId     String      @db.Uuid
+  sessionId  String      @db.Uuid
+  facilityId String      @db.Uuid
+  enteredAt  DateTime    @db.Timestamptz(3)
+  exitedAt   DateTime?   @db.Timestamptz(3)
+  pass       ParkingPass @relation(fields: [passId], references: [id], onDelete: Cascade)
+
+  @@index([passId, enteredAt])
+}
+
+// ───────────────────────────── Valet ─────────────────────────────
+
+model ValetRequest {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  tenantId             String                  @db.Uuid
+  facilityId           String                  @db.Uuid
+  sessionId            String                  @db.Uuid
+  status               ValetStatus             @default(REQUESTED)
+  keyTag               String?
+  parkedLocation       String?
+  requestedAt          DateTime                @default(now()) @db.Timestamptz(3)
+  retrievalRequestedAt DateTime?               @db.Timestamptz(3)
+  deliveredAt          DateTime?               @db.Timestamptz(3)
+  customerConfirmedAt  DateTime?               @db.Timestamptz(3)
+  session              ParkingSession          @relation(fields: [sessionId], references: [id])
+  assignments          ValetAssignment[]
+  handovers            VehicleHandover[]
+  keyRecords           KeyCustodyRecord[]
+  photos               VehicleConditionPhoto[]
+
+  @@index([tenantId, facilityId, status])
+}
+
+model ValetAssignment {
+  id          String       @id @default(uuid()) @db.Uuid
+  requestId   String       @db.Uuid
+  driverId    String       @db.Uuid
+  task        String // PARK, RETRIEVE
+  assignedAt  DateTime     @default(now()) @db.Timestamptz(3)
+  completedAt DateTime?    @db.Timestamptz(3)
+  request     ValetRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+}
+
+model VehicleHandover {
+  id        String       @id @default(uuid()) @db.Uuid
+  requestId String       @db.Uuid
+  direction String // CUSTOMER_TO_VALET, VALET_TO_CUSTOMER
+  staffId   String       @db.Uuid
+  odometer  Int?
+  fuelLevel String?
+  notes     String?
+  at        DateTime     @default(now()) @db.Timestamptz(3)
+  request   ValetRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+}
+
+model KeyCustodyRecord {
+  id        String       @id @default(uuid()) @db.Uuid
+  requestId String       @db.Uuid
+  holderId  String       @db.Uuid
+  location  String // KEY_BOX_A12, DRIVER, CUSTOMER
+  at        DateTime     @default(now()) @db.Timestamptz(3)
+  request   ValetRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+}
+
+model VehicleConditionPhoto {
+  id         String       @id @default(uuid()) @db.Uuid
+  requestId  String       @db.Uuid
+  storageKey String
+  angle      String
+  takenById  String       @db.Uuid
+  at         DateTime     @default(now()) @db.Timestamptz(3)
+  request    ValetRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────────── Corporate ─────────────────────────────
+
+model CorporateAccount {
+  id           String                @id @default(uuid()) @db.Uuid
+  tenantId     String                @db.Uuid
+  name         String
+  gstin        String?
+  billingEmail String
+  status       String                @default("ACTIVE")
+  createdAt    DateTime              @default(now()) @db.Timestamptz(3)
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members      CorporateMember[]
+  contracts    CorporateContract[]
+  allocations  CorporateAllocation[]
+  invoices     CorporateInvoice[]
+
+  @@index([tenantId])
+}
+
+model CorporateMember {
+  id            String           @id @default(uuid()) @db.Uuid
+  corporateId   String           @db.Uuid
+  userId        String?          @db.Uuid
+  name          String
+  employeeCode  String?
+  department    String?
+  email         String?
+  phone         String?
+  isAdmin       Boolean          @default(false)
+  active        Boolean          @default(true)
+  vehiclePlates String[]
+  corporate     CorporateAccount @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+
+  @@index([corporateId])
+}
+
+model CorporateContract {
+  id                  String           @id @default(uuid()) @db.Uuid
+  corporateId         String           @db.Uuid
+  startsAt            DateTime         @db.Timestamptz(3)
+  endsAt              DateTime         @db.Timestamptz(3)
+  billing             String           @default("MONTHLY_POSTPAID")
+  ratePerSessionMinor Int?
+  monthlyFeeMinor     Int?
+  maxConcurrent       Int
+  corporate           CorporateAccount @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+}
+
+model CorporateAllocation {
+  id           String           @id @default(uuid()) @db.Uuid
+  corporateId  String           @db.Uuid
+  facilityId   String           @db.Uuid
+  vehicleClass VehicleClass
+  units        Int
+  inUse        Int              @default(0)
+  corporate    CorporateAccount @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+
+  @@unique([corporateId, facilityId, vehicleClass])
+}
+
+model CorporateInvoice {
+  id          String           @id @default(uuid()) @db.Uuid
+  corporateId String           @db.Uuid
+  number      String           @unique
+  periodStart DateTime         @db.Timestamptz(3)
+  periodEnd   DateTime         @db.Timestamptz(3)
+  amountMinor Int
+  status      String           @default("OPEN")
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+  corporate   CorporateAccount @relation(fields: [corporateId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────────── Support & audit ─────────────────────────────
+
+model SupportTicket {
+  id         String       @id @default(uuid()) @db.Uuid
+  tenantId   String?      @db.Uuid
+  userId     String       @db.Uuid
+  subject    String
+  body       String
+  status     TicketStatus @default(OPEN)
+  priority   String       @default("NORMAL")
+  refType    String?
+  refId      String?      @db.Uuid
+  assigneeId String?      @db.Uuid
+  createdAt  DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime     @updatedAt @db.Timestamptz(3)
+  user       User         @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model IncidentReport {
+  id           String           @id @default(uuid()) @db.Uuid
+  tenantId     String           @db.Uuid
+  facilityId   String           @db.Uuid
+  reportedById String           @db.Uuid
+  category     String // LOST_TICKET, BARRIER_FAILURE, DAMAGE, DISPUTE, EMERGENCY, OTHER
+  severity     IncidentSeverity @default(LOW)
+  description  String
+  sessionId    String?          @db.Uuid
+  photoKeys    String[]
+  resolvedAt   DateTime?        @db.Timestamptz(3)
+  createdAt    DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId, facilityId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  title     String
+  body      String
+  data      Json      @default("{}")
+  readAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String?  @db.Uuid
+  actorId    String?  @db.Uuid
+  actorKind  String // USER, DEVICE, SYSTEM
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  at         DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([tenantId, at])
+  @@index([entityType, entityId])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
