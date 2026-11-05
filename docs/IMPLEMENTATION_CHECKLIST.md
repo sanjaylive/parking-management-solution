@@ -112,7 +112,13 @@ _Last updated: 2026-11-06 (customer app + booking web)_
 - ⬜ Load testing
 
 ## Phase 12 — Deployment
-- ⬜ PM2 / Nginx / Certbot configs, GitHub Actions CI, backup/restore, rollback scripts
+- ✅ `npm run deploy` → push main → GitHub Actions (`.github/workflows/deploy.yml`): API tests on Postgres+Redis, typecheck, Flutter analyze/test, builds, deploy over SSH
+- ✅ Release bundle (`infrastructure/scripts/package-release.sh`): API with prod-only deps + Prisma engines for Ubuntu, Next.js standalone servers, Flutter web
+- ✅ VPS activation (`remote-release.sh`): migrate → atomic `current` symlink → PM2 reload → health check on release sha → auto-rollback. Verified locally (fresh DB, reload, broken release rolled back with exit 1)
+- ✅ PM2 ecosystem, Nginx site for park.2all.co.in (path-routed; validated with `nginx -t` + routing checks in Docker), Certbot via `vps-setup.sh`
+- ✅ Staging mode `ALLOW_SANDBOX_PROVIDERS=true` (production build with console OTP + sandbox payments, flagged in `/health`)
+- ⚠️ Not yet run against the real VPS: needs DNS A record, `vps-setup.sh`, and GitHub secrets (docs/DEPLOYMENT.md)
+- ⬜ Automated DB backups (pg_dump off-box) + restore drill
 
 ## Local ports (chosen to avoid other projects on this machine)
 API 4100 · Operator web 3101 · Staff app (web) 3102 · Customer app (web) 3103 · Booking web 3104 · Postgres 57432 · Redis 57379

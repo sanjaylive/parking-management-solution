@@ -7,6 +7,8 @@
 
 generator client {
   provider = "prisma-client-js"
+  // native for dev machines; debian-openssl-3.0.x for the Ubuntu 22.04/24.04 VPS (CI builds there too)
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

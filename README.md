@@ -4,6 +4,7 @@ Multi-tenant parking management: operators, gates, slots, sessions, pricing, res
 
 - Architecture & workflows: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - What's built, tested, and pending: [`docs/IMPLEMENTATION_CHECKLIST.md`](docs/IMPLEMENTATION_CHECKLIST.md)
+- Deploying to https://park.2all.co.in: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — `npm run deploy` pushes `main`; GitHub Actions tests, builds and deploys to the VPS
 
 ## Quick start
 

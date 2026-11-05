@@ -15,6 +15,10 @@ async function bootstrap() {
     const doc = SwaggerModule.createDocument(app, new DocumentBuilder().setTitle('Park2All API').setVersion('1.0').addBearerAuth().addApiKey({ type: 'apiKey', in: 'header', name: 'x-tenant-id' }, 'tenant').build());
     SwaggerModule.setup('docs', app, doc);
   }
-  await app.listen(e.PORT, '0.0.0.0');
+  if (e.NODE_ENV === 'production' && e.ALLOW_SANDBOX_PROVIDERS) {
+    app.get(Logger).warn('ALLOW_SANDBOX_PROVIDERS=true: console OTP and sandbox payments are active. Staging only.');
+  }
+  app.enableShutdownHooks();
+  await app.listen(e.PORT, e.HOST);
 }
 bootstrap();

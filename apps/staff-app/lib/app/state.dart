@@ -23,7 +23,7 @@ class GateConfig {
 
 class AppState extends ChangeNotifier {
   AppState(this._kv)
-      : sessions = SessionStore(_kv),
+      : sessions = SessionStore(_kv, key: 'p2a.staff.session'),
         queue = OfflineQueue(_kv);
 
   final KeyValueStore _kv;

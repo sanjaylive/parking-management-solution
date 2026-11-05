@@ -1,0 +1,167 @@
+# Push to main → test everything → build one release bundle → ship it to the VPS.
+# Required repository secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY. Optional: VPS_PORT (default 22),
+# VPS_KNOWN_HOSTS (output of `ssh-keyscan -H <host>`; strongly recommended). See docs/DEPLOYMENT.md.
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'deploy-production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PUBLIC_URL: ${{ vars.PUBLIC_URL || 'https://park.2all.co.in' }}
+  FLUTTER_VERSION: 3.47.8
+
+jobs:
+  node:
+    name: API tests + Node builds
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: park2all
+          POSTGRES_PASSWORD: park2all
+          POSTGRES_DB: park2all_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U park2all" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://park2all:park2all@127.0.0.1:5432/park2all_test?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_ACCESS_SECRET: ci-access-secret-0123456789abcdef0123456789
+      JWT_REFRESH_SECRET: ci-refresh-secret-0123456789abcdef012345678
+      QR_SIGNING_SECRET: ci-qr-signing-secret-0123456789abcdef012345
+      DEVICE_SECRET_ENCRYPTION_KEY: ci-device-key-0123456789abcdef0123456789ab
+      PAYMENT_WEBHOOK_SECRET: ci-webhook-secret
+      OTP_PROVIDER: console
+      PAYMENT_PROVIDER: sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prisma client + test database
+        working-directory: apps/api
+        run: pnpm prisma generate && pnpm prisma migrate deploy
+      - run: pnpm -r typecheck
+      - name: API unit + e2e tests
+        run: pnpm --filter @park2all/api test
+
+      - name: Build API, seed and web apps
+        if: github.event_name != 'pull_request'
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_API_URL: ${{ env.PUBLIC_URL }}
+        run: |
+          pnpm --filter @park2all/api build
+          pnpm --filter @park2all/api build:seed
+          NEXT_BASE_PATH=/operator pnpm --filter @park2all/operator-web build
+          pnpm --filter @park2all/booking-web build
+      - name: Assemble Node part of the release
+        if: github.event_name != 'pull_request'
+        # tar here: artifact upload would drop the symlinks and exec bits pnpm's node_modules depends on
+        run: |
+          bash infrastructure/scripts/package-release.sh node out
+          tar -C out -czf release-node.tgz .
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: release-node
+          path: release-node.tgz
+          retention-days: 7
+
+  flutter:
+    name: Flutter tests + web builds
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Analyze + test
+        run: |
+          for d in flutter-packages/design-system flutter-packages/core apps/staff-app apps/customer-app; do
+            echo "::group::$d"
+            (cd "$d" && flutter pub get && flutter analyze && flutter test) || exit 1
+            echo "::endgroup::"
+          done
+      - name: Build web apps
+        if: github.event_name != 'pull_request'
+        run: |
+          (cd apps/staff-app && flutter build web --release --base-href /staff/ --dart-define=API_URL=$PUBLIC_URL)
+          (cd apps/customer-app && flutter build web --release --base-href /app/ --dart-define=API_URL=$PUBLIC_URL)
+          mkdir -p out/web && cp -R apps/staff-app/build/web out/web/staff && cp -R apps/customer-app/build/web out/web/app
+          tar -C out -czf release-flutter.tgz .
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: release-flutter
+          path: release-flutter.tgz
+          retention-days: 7
+
+  deploy:
+    name: Deploy to VPS
+    if: github.event_name != 'pull_request'
+    needs: [node, flutter]
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_URL || 'https://park.2all.co.in' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: infrastructure
+      - uses: actions/download-artifact@v4
+        with:
+          path: parts
+          merge-multiple: true
+      - name: Pack release
+        run: |
+          mkdir release
+          for t in parts/*.tgz; do tar -C release -xzf "$t"; done
+          echo "${GITHUB_SHA}" > release/RELEASE
+          cp -R infrastructure release/infrastructure
+          tar -C release -czf park2all-${GITHUB_SHA}.tgz .
+          ls -lh park2all-${GITHUB_SHA}.tgz
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$VPS_SSH_KEY" ] || [ -z "$VPS_HOST" ]; then
+            echo "::error::VPS_HOST / VPS_USER / VPS_SSH_KEY secrets are not set. See docs/DEPLOYMENT.md."; exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          if [ -n "$VPS_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning::VPS_KNOWN_HOSTS not set; trusting the host key on first use."
+            ssh-keyscan -p "${VPS_PORT:-22}" -H "$VPS_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+      - name: Upload and activate
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key -p ${VPS_PORT:-22} -o BatchMode=yes -o StrictHostKeyChecking=yes"
+          scp -i ~/.ssh/deploy_key -P "${VPS_PORT:-22}" -o BatchMode=yes park2all-${GITHUB_SHA}.tgz infrastructure/scripts/remote-release.sh "$VPS_USER@$VPS_HOST:/tmp/"
+          $SSH "$VPS_USER@$VPS_HOST" "bash /tmp/remote-release.sh /tmp/park2all-${GITHUB_SHA}.tgz ${GITHUB_SHA}"

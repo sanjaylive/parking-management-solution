@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { randomInt, randomUUID } from 'crypto';
-import { env } from '../config/env';
+import { env, sandboxAllowed } from '../config/env';
 import { hmacSha256, randomToken, safeEqualHex, sha256 } from '../common/crypto';
 import { DomainError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
@@ -72,7 +72,7 @@ export class AuthService {
       data: { phone, codeHash: this.hashOtp(phone, code), expiresAt: new Date(Date.now() + OTP_TTL_MS), ip },
     });
     await this.sender.send(phone, code);
-    const exposeDev = env().OTP_PROVIDER === 'console' && env().NODE_ENV !== 'production';
+    const exposeDev = env().OTP_PROVIDER === 'console' && sandboxAllowed();
     return { sentTo: phone.slice(0, 3) + '******' + phone.slice(-4), expiresIn: OTP_TTL_MS / 1000, ...(exposeDev ? { devCode: code } : {}) };
   }
 

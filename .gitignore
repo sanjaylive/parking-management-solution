@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-seed
 .next
 .env
 .env.*
@@ -13,3 +14,4 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 *.iml
+*.tsbuildinfo

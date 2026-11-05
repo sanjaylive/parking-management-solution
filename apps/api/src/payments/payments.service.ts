@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Payment, PaymentPurpose, Prisma } from '@prisma/client';
 import { randomInt, randomUUID } from 'crypto';
-import { env } from '../config/env';
+import { env, sandboxAllowed } from '../config/env';
 import { AuditService } from '../common/audit.service';
 import { DomainError, Forbidden, NotFound } from '../common/errors';
 import { PrismaService, Tx } from '../common/prisma.service';
@@ -204,7 +204,7 @@ export class PaymentsService {
 
   /** Non-production helper standing in for the hosted checkout: emits a correctly signed webhook. */
   sandboxEvent(body: Record<string, unknown>) {
-    if (env().NODE_ENV === 'production') throw Forbidden('Sandbox disabled in production');
+    if (!sandboxAllowed()) throw Forbidden('Sandbox disabled in production');
     const payload = JSON.stringify({ id: 'evt_' + randomUUID(), ...body });
     return { raw: Buffer.from(payload), headers: { 'x-sandbox-signature': SandboxProvider.sign(payload) } };
   }

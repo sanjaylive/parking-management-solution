@@ -4,7 +4,7 @@ import { ensureUser, seedBase, seedOperator } from './seed-lib';
 const prisma = new PrismaClient();
 
 async function main() {
-  if (process.env.NODE_ENV === 'production') throw new Error('Demo seed must not run in production. Use `seed:base` only.');
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_SANDBOX_PROVIDERS !== 'true') throw new Error('Demo seed only runs in development or on a staging box with ALLOW_SANDBOX_PROVIDERS=true.');
   const password = process.env.SEED_PASSWORD ?? 'Park2All@Demo123';
   await seedBase(prisma);
 

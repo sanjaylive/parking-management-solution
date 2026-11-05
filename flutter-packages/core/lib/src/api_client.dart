@@ -34,9 +34,10 @@ class Session {
 }
 
 class SessionStore {
-  SessionStore(this._kv);
+  /// [key] must differ per app: web builds served from one origin share localStorage.
+  SessionStore(this._kv, {String key = 'p2a.session'}) : _key = key;
   final KeyValueStore _kv;
-  static const _key = 'p2a.session';
+  final String _key;
   Session? _cached;
   final _changes = StreamController<Session?>.broadcast();
   Stream<Session?> get changes => _changes.stream;

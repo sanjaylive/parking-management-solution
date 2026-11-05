@@ -11,7 +11,7 @@ enum Stage { loading, signedOut, needsProfile, needsVehicle, ready }
 
 /// Session + onboarding state. Everything else is fetched on demand through providers.
 class AppState extends ChangeNotifier {
-  AppState(KeyValueStore kv) : sessions = SessionStore(kv);
+  AppState(KeyValueStore kv) : sessions = SessionStore(kv, key: 'p2a.customer.session');
   final SessionStore sessions;
   late final ApiClient api = ApiClient(baseUrl: apiUrl, sessions: sessions);
 
