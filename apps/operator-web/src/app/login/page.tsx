@@ -2,7 +2,7 @@
 import { Car, ShieldCheck, Zap } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
-import { Button, Input } from '@/components/ui';
+import { Button, Input } from '@park2all/web-ui';
 import { api, ApiError, auth } from '@/lib/api';
 
 export default function LoginPage() {

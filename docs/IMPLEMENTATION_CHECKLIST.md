@@ -2,7 +2,7 @@
 
 Legend: ✅ built & tested · 🟡 built, partial or untested · ⬜ not started · 🔒 pending external credentials/hardware
 
-_Last updated: 2026-11-06_
+_Last updated: 2026-11-06 (customer app + booking web)_
 
 ## Verification status
 
@@ -10,9 +10,12 @@ _Last updated: 2026-11-06_
 |---|---|
 | API typecheck (`tsc --noEmit`) | ✅ clean |
 | API unit tests (pricing engine, plates) | ✅ 27/27 |
-| API e2e tests (real Postgres) | ✅ 19/19 (14 critical flows + 5 offline sync) |
+| API tests | ✅ 49/49 total (18 pricing engine, 9 plates, 14 critical flows, 5 offline sync, 2 customer checkout) — Jest pinned to 1 worker (shared test DB) |
 | Flutter `analyze` (design-system, core, staff-app) | ✅ no issues |
-| Flutter tests | ✅ 13/13 (design 4, core 4, staff app 5) |
+| Flutter tests | ✅ 20/20 (design 4, core 7, staff app 5, customer app 4) |
+| Customer app web build + manual run in Chrome | ✅ OTP signup → onboarding → nearby → facility → reserve → sandbox pay → QR → gate admits by plate (matched to booking) → live session |
+| Booking web build + manual run in Chrome | ✅ SSR search (results in HTML) → facility → guest OTP sign-in mid-booking → declined payment → retry → confirmed QR; payment attempts + ledger verified in DB |
+| Booking web at phone width | ⚠️ not verified — the automation browser window could not be resized; layout uses responsive breakpoints |
 | Staff app web build + manual run in Chrome | ✅ login → online entry → API stopped → provisional entry queued → API restarted → auto-sync → verified in DB |
 | Staff app Android debug APK | ✅ builds (`flutter build apk --debug`); not run on a device/emulator |
 | Staff app iOS | ⬜ not built — Xcode installation incomplete on this machine |
@@ -27,7 +30,7 @@ _Last updated: 2026-11-06_
 - ✅ Prisma schema across all 15 domains + SQL safeguards (one-active-session partial index, capacity CHECKs, append-only ledger/audit triggers)
 - ✅ OTP login (rate limits, cooldown, attempt lockout, hashed codes), password login, JWT + refresh rotation with reuse detection
 - ✅ RBAC (permission catalog, 8 roles), tenant isolation guard, facility-scoped membership
-- 🟡 Web design system (tokens, light/dark, MetricCard, OccupancyRing, VehicleNumberPlate, SearchableCombobox, states): lives in `apps/operator-web/src/components/ui` — **not yet extracted** to `packages/web-ui`
+- ✅ Web design system extracted to `packages/web-ui` (tokens `styles.css`, light/dark, MetricCard, OccupancyRing, VehicleNumberPlate, SearchableCombobox, states) — used by operator-web and booking-web
 - ✅ Flutter design system (`flutter-packages/design-system`): M3 theme from brand tokens, light/dark, VehicleNumberPlate, StatusChip, OccupancyRing, GradientHeader, EmptyState, ₹ formatting (Indian grouping)
 - ✅ Flutter core (`flutter-packages/core`): Dio API client (refresh, tenant header, idempotency keys), secure session store, AES-256-GCM offline queue
 - 🟡 Freezed not used — models are plain Dart maps/classes for now (no codegen step); revisit when the customer app needs typed models
@@ -73,8 +76,13 @@ _Last updated: 2026-11-06_
 
 ## Phase 7 — Customer app & booking website
 - ✅ Customer API: profile, vehicles, discovery (geo/filters/sort), facility details, quote, reserve, pay, sessions, passes, account deletion request
-- ⬜ Customer Flutter app
-- ⬜ Public booking website
+- ✅ Customer API: live charge estimate (read-only) and pay-before-exit checkout (honoured at the exit gate within grace)
+- ✅ Customer Flutter app (`apps/customer-app`): OTP login (no separate signup), onboarding, Home (live session, upcoming, nearby), Explore (filters, sort, list + map), facility details, reserve with server quote, sandbox checkout, QR pass, bookings + parking history, live session with pay-now, profile (vehicles, passes, delete account)
+- ✅ Public booking website (`apps/booking-web`, :3104): server-rendered search + facility pages (SEO metadata), URL-driven filters, optional geolocation, OTP sign-in that resumes the booking, sandbox checkout, bookings list, QR pass, in-page cancel confirmation
+- 🔒 Maps: OpenStreetMap tiles used for development (no key). Production needs a commercial tile/maps provider (Google Maps / Mapbox key) and attribution review
+- 🔒 Real payment checkout (gateway SDK / hosted page) — sandbox provider until merchant credentials exist
+- ⬜ Customer push notifications (FCM needs a Firebase project), extend-booking, pass purchase UI (pass purchase API also missing), reviews submission
+- ⬜ Customer app on a real device; iOS build (Xcode incomplete on this machine)
 
 ## Phase 8 — Super admin & SaaS
 - ✅ Admin API: dashboard (MRR, tenants, sessions, revenue), tenant list/detail, onboarding (tenant + owner + trial), suspend, plans, audit log
@@ -107,4 +115,4 @@ _Last updated: 2026-11-06_
 - ⬜ PM2 / Nginx / Certbot configs, GitHub Actions CI, backup/restore, rollback scripts
 
 ## Local ports (chosen to avoid other projects on this machine)
-API 4100 · Operator web 3101 · Staff app (web build) 3102 · Postgres 57432 · Redis 57379
+API 4100 · Operator web 3101 · Staff app (web) 3102 · Customer app (web) 3103 · Booking web 3104 · Postgres 57432 · Redis 57379

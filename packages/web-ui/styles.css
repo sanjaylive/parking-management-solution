@@ -1,0 +1,68 @@
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Park2All design tokens — Smart Mobility. Light is default; dark via data-theme or OS preference. */
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-2: #eef2f9;
+  --border: #dde3ee;
+  --text: #0b1530;
+  --muted: #5b6785;
+  --brand: #2257ff;        /* electric blue */
+  --brand-2: #00b8d9;      /* cyan */
+  --indigo: #4f46e5;
+  --violet: #7c5cff;
+  --navy: #0a1433;
+  --success: #12a150;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --ring: #2257ff55;
+  --grad: linear-gradient(135deg, #2257ff 0%, #4f46e5 55%, #7c5cff 100%);
+  --grad-cyan: linear-gradient(135deg, #00b8d9 0%, #2257ff 100%);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #070d22; --surface: #0e1733; --surface-2: #15204a; --border: #22305e; --text: #e8edff; --muted: #93a0c8;
+    --brand: #4d7cff; --brand-2: #22d3ee; --indigo: #818cf8; --violet: #a78bfa; --success: #34d399; --warning: #fbbf24; --danger: #f87171; --ring: #4d7cff66;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #070d22; --surface: #0e1733; --surface-2: #15204a; --border: #22305e; --text: #e8edff; --muted: #93a0c8;
+  --brand: #4d7cff; --brand-2: #22d3ee; --indigo: #818cf8; --violet: #a78bfa; --success: #34d399; --warning: #fbbf24; --danger: #f87171; --ring: #4d7cff66;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-indigo: var(--indigo);
+  --color-violet: var(--violet);
+  --color-navy: var(--navy);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html, body { background: var(--bg); color: var(--text); }
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+*:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+
+.bg-grad { background: var(--grad); }
+.bg-grad-cyan { background: var(--grad-cyan); }
+.text-grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 1px 2px #0b15300a, 0 8px 24px -12px #0b15301f; }
+.skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 37%, var(--surface-2) 63%); background-size: 400% 100%; animation: sk 1.4s ease infinite; border-radius: 10px; }
+@keyframes sk { 0% { background-position: 100% 50% } 100% { background-position: 0 50% } }
+.tabular { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

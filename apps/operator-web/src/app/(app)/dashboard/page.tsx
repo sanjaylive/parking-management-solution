@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Car, CircleDollarSign, Clock, IndianRupee, ShieldAlert, Users } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Badge, EmptyState, ErrorState, MetricCard, OccupancyRing, SectionTitle, Skeleton } from '@/components/ui';
+import { Badge, EmptyState, ErrorState, MetricCard, OccupancyRing, SectionTitle, Skeleton } from '@park2all/web-ui';
 import { api, rupees, vehicleLabel } from '@/lib/api';
 import { useApp } from '@/lib/app-context';
 

@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDownToLine, ArrowUpFromLine, Banknote, CheckCircle2, DoorOpen, QrCode, Smartphone, TriangleAlert } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { toast } from 'sonner';
-import { Badge, Button, ErrorState, SearchableCombobox, VehicleNumberPlate } from '@/components/ui';
+import { Badge, Button, ErrorState, SearchableCombobox, VehicleNumberPlate } from '@park2all/web-ui';
 import { api, ApiError, duration, rupees, vehicleLabel } from '@/lib/api';
 import { useApp } from '@/lib/app-context';
-import { cn } from '@/lib/cn';
+import { cn } from '@park2all/web-ui/cn';
 
 type Mode = 'ENTRY' | 'EXIT';
 const CLASSES = ['CAR', 'SUV', 'TWO_WHEELER', 'EV_CAR'];

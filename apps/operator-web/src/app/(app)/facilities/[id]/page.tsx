@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Badge, Button, ErrorState, OccupancyRing, SectionTitle, Skeleton, VehicleNumberPlate } from '@/components/ui';
+import { Badge, Button, ErrorState, OccupancyRing, SectionTitle, Skeleton, VehicleNumberPlate } from '@park2all/web-ui';
 import { api, rupees, vehicleLabel } from '@/lib/api';
-import { cn } from '@/lib/cn';
+import { cn } from '@park2all/web-ui/cn';
 
 const SLOT_STYLE: Record<string, string> = {
   AVAILABLE: 'border-success/40 bg-success/10 text-success hover:bg-success/20',

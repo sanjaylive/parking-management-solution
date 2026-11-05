@@ -4,9 +4,9 @@ import { Building2, CarFront, LayoutDashboard, LogOut, Menu, Moon, ScanLine, Sun
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { SearchableCombobox } from '@/components/ui';
+import { SearchableCombobox } from '@park2all/web-ui';
 import { api, auth } from '@/lib/api';
-import { cn } from '@/lib/cn';
+import { cn } from '@park2all/web-ui/cn';
 import { useLive } from '@/lib/live';
 import { AppCtx } from '@/lib/app-context';
 

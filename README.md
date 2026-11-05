@@ -14,6 +14,7 @@ cd apps/api && cp .env.example .env
 pnpm prisma migrate deploy && pnpm db:seed      # prints demo logins
 pnpm build && pnpm start                        # API :4100, Swagger at /docs
 cd ../operator-web && cp .env.example .env.local && pnpm build && pnpm start   # :3101
+cd ../booking-web && cp .env.example .env.local && pnpm build && pnpm start    # :3104 public booking site
 ```
 
 Demo password for all seeded staff: `Park2All@Demo123` (dev only; seed refuses to run in production).
@@ -37,3 +38,14 @@ flutter run --dart-define=API_URL=http://10.0.2.2:4100                          
 ```
 
 Shared packages: `flutter-packages/design-system` (p2a_design), `flutter-packages/core` (p2a_core).
+
+## Customer app (Flutter)
+
+```bash
+cd apps/customer-app
+flutter test
+flutter run -d chrome --dart-define=API_URL=http://localhost:4100 --web-port 3103
+```
+
+In development the API returns the OTP in the response (`devCode`) and the apps show it; production refuses `OTP_PROVIDER=console`.
+Payments use the in-repo sandbox provider: success is only ever recorded from a signed webhook.

@@ -3,7 +3,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { Command } from 'cmdk';
 import { AlertTriangle, Check, ChevronsUpDown, Inbox, Loader2, X } from 'lucide-react';
 import { ButtonHTMLAttributes, forwardRef, InputHTMLAttributes, ReactNode, useState } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from './cn';
 
 // ───────── Button ─────────
 type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';

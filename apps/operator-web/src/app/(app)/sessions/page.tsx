@@ -2,7 +2,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { CarFront, Search } from 'lucide-react';
 import { useState } from 'react';
-import { Button, EmptyState, ErrorState, SearchableCombobox, SessionStatus, Skeleton, VehicleNumberPlate } from '@/components/ui';
+import { Button, EmptyState, ErrorState, SearchableCombobox, SessionStatus, Skeleton, VehicleNumberPlate } from '@park2all/web-ui';
 import { api, duration, rupees, vehicleLabel } from '@/lib/api';
 import { useApp } from '@/lib/app-context';
 

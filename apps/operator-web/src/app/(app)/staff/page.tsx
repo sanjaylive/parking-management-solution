@@ -1,7 +1,7 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
 import { Users } from 'lucide-react';
-import { Badge, EmptyState, ErrorState, Skeleton } from '@/components/ui';
+import { Badge, EmptyState, ErrorState, Skeleton } from '@park2all/web-ui';
 import { api } from '@/lib/api';
 
 export default function Staff() {

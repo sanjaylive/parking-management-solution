@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { BatteryCharging, Building2, MapPin, Umbrella } from 'lucide-react';
 import Link from 'next/link';
-import { Badge, EmptyState, ErrorState, OccupancyRing, Skeleton } from '@/components/ui';
+import { Badge, EmptyState, ErrorState, OccupancyRing, Skeleton } from '@park2all/web-ui';
 import { api } from '@/lib/api';
 
 export default function Facilities() {
