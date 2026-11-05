@@ -59,6 +59,8 @@ export const authed = (app: INestApplication, token: string, tenantId?: string) 
       return r;
     },
     patch: (u: string) => h(agent.patch(u)),
+    put: (u: string) => h(agent.put(u)),
+    delete: (u: string) => h(agent.delete(u)),
   };
 };
 

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { LiveService } from '../realtime/live.service';
 import { DeviceRef } from './adapters';
 import { InProcessTransport } from './transport';
@@ -30,6 +31,7 @@ export class BarrierService {
     private prisma: PrismaService,
     private transport: InProcessTransport,
     private live: LiveService,
+    private notifications: NotificationsService,
   ) {}
 
   async open(p: { tenantId: string; gateId?: string | null; reason: BarrierReason; sessionId?: string; overrideId?: string; requestedById?: string }): Promise<BarrierOutcome> {
@@ -80,6 +82,7 @@ export class BarrierService {
     });
     await this.prisma.parkingGate.update({ where: { id: gate.id }, data: { status: 'DEGRADED' } });
     this.live.emit(gate.facilityId, 'hardware.alert', { gateId: gate.id, code: 'BARRIER_COMMAND_FAILED', error: lastError });
+    await this.notifications.hardwareAlert({ tenantId: p.tenantId, facilityId: gate.facilityId, critical: true, title: `Barrier failed at gate ${gate.code}`, body: `The barrier did not respond (${lastError}). The gate is marked degraded; open it manually if needed.` });
     this.log.warn(`Barrier command ${cmd.id} ${status}: ${lastError}`);
     return { mode: 'AUTOMATIC', commandId: cmd.id, status, error: lastError };
   }

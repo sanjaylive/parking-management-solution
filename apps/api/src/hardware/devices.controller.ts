@@ -12,6 +12,7 @@ import { ZodPipe } from '../common/zod';
 import { Public, RequirePerm, Tenant, TenantContext } from '../auth/context';
 import { P } from '../auth/permissions';
 import { GateService } from '../sessions/gate.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { LiveService } from '../realtime/live.service';
 import { checkPlate } from '../vehicles/plate';
 
@@ -36,6 +37,7 @@ export class DevicesController {
     private gate: GateService,
     private live: LiveService,
     private audit: AuditService,
+    private notifications: NotificationsService,
   ) {}
 
   /** Issue (or rotate) a device credential. Secret is shown once. */
@@ -88,6 +90,7 @@ export class DevicesController {
     else if (evt.type === 'FAULT') {
       await this.prisma.hardwareAlert.create({ data: { tenantId: device.tenantId, deviceId: device.id, severity: 'WARNING', code: evt.code, message: evt.message } });
       this.live.emit(device.facilityId, 'hardware.alert', { deviceId: device.id, code: evt.code });
+      await this.notifications.hardwareAlert({ tenantId: device.tenantId, facilityId: device.facilityId, critical: false, title: `Device fault: ${evt.code}`, body: evt.message ?? 'A device reported a fault.' });
     } else if (evt.type === 'SENSOR') result = await this.handleSensor(device, evt);
     await this.prisma.deviceEvent.update({ where: { deviceId_eventId: { deviceId: device.id, eventId: evt.eventId } }, data: { processed: true } });
     return { ok: true, result };

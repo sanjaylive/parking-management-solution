@@ -2,3 +2,12 @@
 @import "@park2all/web-ui/styles.css";
 /* Tailwind must scan the shared component sources for class names. */
 @source "../../../../packages/web-ui/src";
+
+/* Popover / drawer motion (respecting reduced motion). */
+@keyframes p2a-pop { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes p2a-slide { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes p2a-fade { from { opacity: 0; } to { opacity: 1; } }
+.pop-in { animation: p2a-pop .16s ease-out; transform-origin: top right; }
+.drawer-in { animation: p2a-slide .22s cubic-bezier(.2,.8,.2,1); }
+.fade-in { animation: p2a-fade .2s ease-out; }
+@media (prefers-reduced-motion: reduce) { .pop-in, .drawer-in, .fade-in { animation: none; } }

@@ -21,6 +21,8 @@ import { PaymentsService } from './payments/payments.service';
 import { PricingService } from './pricing/pricing.service';
 import { RatesController } from './pricing/rates.controller';
 import { RealtimeModule } from './realtime/live.service';
+import { NotificationsModule } from './notifications/notifications.service';
+import { SettingsModule } from './settings/settings.service';
 import { MeController, PublicController } from './reservations/customer.controller';
 import { ReservationsService } from './reservations/reservations.service';
 import { GateController, SessionsController } from './sessions/gate.controller';
@@ -47,6 +49,8 @@ import { OperatorController } from './tenancy/operator.controller';
     IdempotencyModule,
     EntitlementModule,
     RealtimeModule,
+    SettingsModule,
+    NotificationsModule,
     AuthModule,
   ],
   controllers: [

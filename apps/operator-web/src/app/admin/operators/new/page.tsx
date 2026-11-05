@@ -15,6 +15,9 @@ export default function OnboardOperator() {
   const router = useRouter();
   const qc = useQueryClient();
   const plans = useQuery({ queryKey: ['admin', 'plans'], queryFn: () => api<any[]>('/v1/admin/plans') });
+  const settings = useQuery({ queryKey: ['admin', 'settings'], queryFn: () => api('/v1/admin/settings'), refetchInterval: false });
+  const defaults = settings.data?.operators;
+  const minPw = settings.data?.security.passwordMinLength ?? 10;
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
@@ -61,11 +64,11 @@ export default function OnboardOperator() {
         <section className="card space-y-4 p-5">
           <SectionTitle title="Subscription" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Select name="planCode" label="Plan" required defaultValue="">
+            <Select key={defaults?.defaultPlanCode ?? 'loading'} name="planCode" label="Plan" required defaultValue={defaults?.defaultPlanCode ?? ''}>
               <option value="" disabled>{plans.isLoading ? 'Loading plans…' : 'Choose a plan'}</option>
               {plans.data?.filter((p) => p.active).sort((a, b) => (a.priceMonthlyMinor || Infinity) - (b.priceMonthlyMinor || Infinity)).map((p) => <option key={p.code} value={p.code}>{p.name} — {p.priceMonthlyMinor ? `${rupees(p.priceMonthlyMinor)}/month` : 'custom pricing'}</option>)}
             </Select>
-            <Input name="trialDays" type="number" label="Free trial (days, 0 = start paid)" required min={0} max={90} defaultValue={14} />
+            <Input key={defaults?.defaultTrialDays ?? 'loading'} name="trialDays" type="number" label="Free trial (days, 0 = start paid)" required min={0} max={90} defaultValue={defaults?.defaultTrialDays ?? 14} />
           </div>
         </section>
 
@@ -74,7 +77,7 @@ export default function OnboardOperator() {
           <div className="grid gap-4 sm:grid-cols-2">
             <Input name="ownerName" label="Owner name" required minLength={2} />
             <Input name="ownerEmail" type="email" label="Owner email" required autoComplete="off" />
-            <Input name="ownerPassword" type="password" label="Temporary password (10+ characters)" required minLength={10} autoComplete="new-password" />
+            <Input name="ownerPassword" type="password" label={`Temporary password (${minPw}+ characters)`} required minLength={minPw} autoComplete="new-password" />
           </div>
         </section>
 

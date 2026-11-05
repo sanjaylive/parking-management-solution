@@ -122,3 +122,7 @@ _Last updated: 2026-11-06 (customer app + booking web)_
 
 ## Local ports (chosen to avoid other projects on this machine)
 API 4100 · Operator web 3101 · Staff app (web) 3102 · Customer app (web) 3103 · Booking web 3104 · Postgres 57432 · Redis 57379
+- ✅ Platform settings (`SystemSetting` groups: brand, operators, notifications, security) at /admin/settings; public brand at `GET /v1/public/brand`
+- ✅ Notifications module: per-user in-app notifications with live socket delivery (`user:<id>` room), bell + notification centre in admin and operator consoles, announcements (`POST /v1/admin/notifications/broadcast`), events for onboarding, status changes and hardware alerts
+- ✅ Account drawer: edit name, change password (signs out other devices), active sign-ins, theme
+- ✅ Park2All logo (`packages/web-ui/brand/`), favicons and PWA icons

@@ -10,5 +10,7 @@ const config: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, '../..'),
   // Mounted under a sub-path in production (e.g. /operator); empty in development.
   basePath: process.env.NEXT_BASE_PATH || undefined,
+  // <img> and other raw asset URLs need the base path too.
+  env: { NEXT_PUBLIC_BASE_PATH: process.env.NEXT_BASE_PATH || '' },
 };
 export default config;

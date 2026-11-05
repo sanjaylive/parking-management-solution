@@ -4,7 +4,9 @@ import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { z } from 'zod';
 import { AuditService } from '../common/audit.service';
-import { NotFound } from '../common/errors';
+import { DomainError, NotFound } from '../common/errors';
+import { NotificationsService } from '../notifications/notifications.service';
+import { SettingsService } from '../settings/settings.service';
 import { PrismaService } from '../common/prisma.service';
 import { ZodPipe } from '../common/zod';
 import { AuthUser, CurrentUser, RequirePlatform } from '../auth/context';
@@ -19,7 +21,7 @@ const onboardSchema = z.object({
   contactPhone: z.string().optional(),
   planCode: z.string(),
   trialDays: z.number().int().min(0).max(90).default(14),
-  owner: z.object({ name: z.string().min(2), email: z.string().email(), password: z.string().min(10) }),
+  owner: z.object({ name: z.string().min(2), email: z.string().email(), password: z.string().min(8).max(200) }), // real minimum: Settings → Security
 });
 const statusSchema = z.object({ status: z.enum(['TRIAL', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CLOSED']), reason: z.string().min(3) });
 const listQuery = z.object({ q: z.string().optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25) });
@@ -30,6 +32,8 @@ export class AdminController {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private notifications: NotificationsService,
+    private settings: SettingsService,
   ) {}
 
   @Get('dashboard')
@@ -79,6 +83,9 @@ export class AdminController {
   @Post('tenants')
   @RequirePlatform(P.PLATFORM_TENANTS)
   async onboard(@CurrentUser() u: AuthUser, @Body(new ZodPipe(onboardSchema)) b: z.infer<typeof onboardSchema>) {
+    const { passwordMinLength } = await this.settings.get('security');
+    if (b.owner.password.length < passwordMinLength) throw new DomainError('WEAK_PASSWORD', `Owner password must be at least ${passwordMinLength} characters`, 400);
+    if (await this.prisma.tenant.count({ where: { slug: b.slug } })) throw new DomainError('SLUG_TAKEN', `The slug "${b.slug}" is already used by another operator`, 409);
     const plan = await this.prisma.subscriptionPlan.findUnique({ where: { code: b.planCode } });
     if (!plan) throw NotFound('Plan');
     const ownerRole = await this.prisma.role.findUniqueOrThrow({ where: { key: 'TENANT_OWNER' } });
@@ -98,6 +105,20 @@ export class AdminController {
       return t;
     });
     await this.audit.log({ tenantId: tenant.id, actorId: u.userId, actorKind: 'USER', action: 'tenant.onboard', entityType: 'Tenant', entityId: tenant.id, after: { ...b, owner: { ...b.owner, password: '[redacted]' } } });
+    await this.notifications.platformEvent('operatorOnboarded', {
+      title: 'New operator onboarded', body: `${tenant.name} joined on the ${plan.name} plan${b.trialDays ? ` with a ${b.trialDays}-day trial` : ''}.`,
+      type: 'operator', severity: 'success', link: `/admin/operators/${tenant.id}`,
+    });
+    if ((await this.settings.get('notifications')).welcomeOwner) {
+      const brand = await this.settings.get('brand');
+      await this.notifications.safe(async () => {
+        const owner = await this.prisma.user.findUniqueOrThrow({ where: { email: b.owner.email.toLowerCase() }, select: { id: true } });
+        await this.notifications.notify([owner.id], {
+          title: `Welcome to ${brand.platformName}`, body: `${tenant.name} is set up. Add your first car park under Facilities, then invite your team.`,
+          type: 'system', severity: 'success', link: '/facilities',
+        });
+      });
+    }
     return tenant;
   }
 
@@ -108,6 +129,16 @@ export class AdminController {
     if (!before) throw NotFound('Tenant');
     const t = await this.prisma.tenant.update({ where: { id }, data: { status: b.status } });
     await this.audit.log({ tenantId: id, actorId: u.userId, actorKind: 'USER', action: 'tenant.status', entityType: 'Tenant', entityId: id, before: { status: before.status }, after: b });
+    if (before.status !== b.status) {
+      const label = (x: string) => x.replace('_', ' ').toLowerCase();
+      const severity = b.status === 'SUSPENDED' || b.status === 'CLOSED' ? 'critical' : b.status === 'PAST_DUE' ? 'warning' : 'success';
+      await this.notifications.platformEvent('operatorStatusChanged', {
+        title: `${t.name} is now ${label(b.status)}`, body: `Changed from ${label(before.status)}. Reason: ${b.reason}`, type: 'operator', severity, link: `/admin/operators/${id}`,
+      });
+      await this.notifications.safe(async () => this.notifications.notify(await this.notifications.operatorAdminIds([id]), {
+        title: `Your account is now ${label(b.status)}`, body: b.reason, type: 'billing', severity, link: '/dashboard',
+      }));
+    }
     return t;
   }
 

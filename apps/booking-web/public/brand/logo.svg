@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 320" role="img" aria-label="Park2All">
+  <defs>
+    <linearGradient id="p2a-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2257ff"/>
+      <stop offset="1" stop-color="#00b8d9"/>
+    </linearGradient>
+    <linearGradient id="p2a-text" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2257ff"/>
+      <stop offset="1" stop-color="#00b8d9"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(16 16) scale(.5625)">
+    <rect width="512" height="512" rx="116" fill="url(#p2a-bg)"/>
+    <path d="M184 392V136h92a88 88 0 0 1 0 176h-92" fill="none" stroke="#fff" stroke-width="60" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="278" cy="224" r="24" fill="#a5f3fc"/>
+    <path d="M300 392h44M372 392h28" stroke="#fff" stroke-opacity=".55" stroke-width="20" stroke-linecap="round"/>
+  </g>
+  <text x="340" y="212" font-family="'Plus Jakarta Sans','Inter','Segoe UI',system-ui,sans-serif" font-size="150" font-weight="800" letter-spacing="-4" fill="#0f172a">Park<tspan fill="url(#p2a-text)">2</tspan>All</text>
+</svg>

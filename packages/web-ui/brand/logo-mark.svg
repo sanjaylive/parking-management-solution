@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Park2All">
+  <defs>
+    <linearGradient id="p2a-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2257ff"/>
+      <stop offset="1" stop-color="#00b8d9"/>
+    </linearGradient>
+    <linearGradient id="p2a-shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".18"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#p2a-bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#p2a-shine)"/>
+  <!-- P: stem + bowl drawn as one stroke -->
+  <path d="M184 392V136h92a88 88 0 0 1 0 176h-92" fill="none" stroke="#fff" stroke-width="60" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- parking-spot dot in the bowl -->
+  <circle cx="278" cy="224" r="24" fill="#a5f3fc"/>
+  <!-- lane marks -->
+  <path d="M300 392h44M372 392h28" stroke="#fff" stroke-opacity=".55" stroke-width="20" stroke-linecap="round"/>
+</svg>

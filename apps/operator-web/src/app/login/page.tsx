@@ -4,9 +4,11 @@ import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import { Button, Input } from '@park2all/web-ui';
 import { api, ApiError, auth } from '@/lib/api';
+import { BrandMark, useBrand } from '@/lib/brand';
 
 export default function LoginPage() {
   const router = useRouter();
+  const brand = useBrand();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +39,7 @@ export default function LoginPage() {
       <section className="relative hidden overflow-hidden bg-navy p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="absolute -right-32 -top-32 size-[520px] rounded-full bg-grad opacity-40 blur-3xl" />
         <div className="absolute -bottom-40 -left-20 size-[420px] rounded-full bg-grad-cyan opacity-30 blur-3xl" />
-        <div className="relative flex items-center gap-3 text-xl font-extrabold"><span className="grid size-10 place-items-center rounded-xl bg-grad">P</span>Park2All</div>
+        <div className="relative flex items-center gap-3 text-xl font-extrabold"><BrandMark brand={brand} className="size-10" />{brand.platformName}</div>
         <div className="relative max-w-md space-y-6">
           <h1 className="text-5xl font-extrabold leading-[1.05] tracking-tight">Every gate, slot and rupee — <span className="text-grad brightness-150">live.</span></h1>
           <p className="text-lg text-white/70">Run multi-site parking with real-time occupancy, server-verified payments and hardware you can trust.</p>
@@ -47,11 +49,12 @@ export default function LoginPage() {
             ))}
           </ul>
         </div>
-        <p className="relative text-sm text-white/50">Smart Mobility & Parking</p>
+        <p className="relative text-sm text-white/50">{brand.tagline}{brand.supportEmail ? ` · ${brand.supportEmail}` : ''}</p>
       </section>
       <section className="flex items-center justify-center p-6">
         <form onSubmit={submit} className="w-full max-w-sm space-y-5">
           <div>
+            <div className="mb-6 flex items-center gap-2.5 text-lg font-extrabold lg:hidden"><BrandMark brand={brand} />{brand.platformName}</div>
             <h2 className="text-2xl font-extrabold">Sign in to your console</h2>
             <p className="mt-1 text-sm text-muted">Operators, managers, gate staff and platform admins.</p>
           </div>

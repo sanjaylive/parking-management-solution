@@ -15,6 +15,10 @@ export class LiveService {
   emit(facilityId: string, event: string, data: unknown) {
     this.server?.to(`facility:${facilityId}`).emit(event, { facilityId, at: new Date().toISOString(), ...(data as object) });
   }
+  /** Personal events (notifications) for every open socket of one user. */
+  toUser(userId: string, event: string, data: unknown) {
+    this.server?.to(`user:${userId}`).emit(event, data);
+  }
 }
 
 @WebSocketGateway({ namespace: '/live', cors: { origin: true, credentials: true } })
@@ -37,6 +41,7 @@ export class LiveGateway implements OnGatewayConnection {
       const token = (client.handshake.auth?.token as string) ?? '';
       const payload = await this.jwt.verifyAsync(token, { secret: env().JWT_ACCESS_SECRET });
       client.data.userId = payload.sub;
+      await client.join(`user:${payload.sub}`);
     } catch {
       client.disconnect(true);
     }
