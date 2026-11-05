@@ -154,6 +154,7 @@ export function calculatePrice(input: PriceInput): PriceResult {
     const nightsCharged = new Set<string>();
     const windowHits = new Map<string, number>();
     let overnightTotal = new Decimal(0);
+    let billedUnits = 0; // units charged at unit rates (not absorbed by an overnight flat fee)
 
     for (let i = 0; i < units; i++) {
       const at = new Date(startMs + i * d.base.unitMinutes * 60_000);
@@ -168,6 +169,7 @@ export function calculatePrice(input: PriceInput): PriceResult {
         continue;
       }
 
+      billedUnits++;
       let unitAmt = i === 0 && d.base.firstUnitAmount ? d.base.firstUnitAmount : d.base.amount;
       for (const w of d.windows) {
         const dayOk = !w.days || w.days.includes(lp.weekday);
@@ -189,13 +191,13 @@ export function calculatePrice(input: PriceInput): PriceResult {
         parkingTotal = parkingTotal.plus(d.dailyCap);
       } else parkingTotal = parkingTotal.plus(amt);
     }
-    if (units > 0) {
+    if (billedUnits > 0) {
       lines.push({
         code: 'PARKING',
-        label: `Parking (${units} × ${d.base.unitMinutes} min)`,
+        label: `Parking (${billedUnits} × ${d.base.unitMinutes} min)`,
         amountMinor: toMinor(parkingTotal),
         meta: {
-          units,
+          units: billedUnits,
           unitMinutes: d.base.unitMinutes,
           days: perDay.size,
           windows: Object.fromEntries(windowHits),

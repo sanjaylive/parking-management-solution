@@ -355,6 +355,15 @@ export class GateService {
     return { ...price, adjustmentsMinor, totalMinor, paidMinor: session.amountPaidMinor, outstandingMinor };
   }
 
+  /** Read-only running charge for a session (customer app live view). Persists nothing. */
+  async estimate(sessionId: string, at = new Date()) {
+    const s = await this.prisma.parkingSession.findUnique({ where: { id: sessionId }, include: { facility: true } });
+    if (!s) throw NotFound('Session');
+    if (s.exitAt) throw Conflict('SESSION_ALREADY_COMPLETED', 'Vehicle has already exited');
+    const fee = await this.computeFee(this.prisma, s, s.facility, at, s.isLostTicket);
+    return { sessionId: s.id, asOf: at, graceMinutes: s.facility.graceMinutes, ...fee };
+  }
+
   async exitQuote(actor: Actor, input: ExitInput) {
     const exitAt = this.resolveTime(input.occurredAt);
     return this.prisma.$transaction(async (tx) => {

@@ -82,7 +82,7 @@ class GradientHeader extends StatelessWidget {
           Positioned.fill(child: Container(color: P2AColors.navy)),
           Positioned(right: -60, top: -80, child: _blob(P2AColors.brandGradient, 220)),
           Positioned(left: -40, bottom: -100, child: _blob(P2AColors.cyanGradient, 200)),
-          Padding(padding: padding, child: DefaultTextStyle.merge(style: const TextStyle(color: Colors.white), child: IconTheme.merge(data: const IconThemeData(color: Colors.white), child: child))),
+          Padding(padding: padding, child: SizedBox(width: double.infinity, child: DefaultTextStyle.merge(style: const TextStyle(color: Colors.white), child: IconTheme.merge(data: const IconThemeData(color: Colors.white), child: child)))),
         ]),
       );
 

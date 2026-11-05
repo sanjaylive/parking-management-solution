@@ -67,6 +67,13 @@ describe('pricing engine', () => {
     expect(r.lines.find((l) => l.code === 'OVERNIGHT')?.amountMinor).toBe(10000);
   });
 
+  it('stay entirely inside the overnight window shows only the overnight line', () => {
+    const def: RateDefinitionInput = { base: { unitMinutes: 60, amount: 40 }, overnight: { from: '23:00', to: '06:00', flat: 100 } };
+    const r = price(def, ist('2026-11-05T23:45'), ist('2026-11-06T01:45'));
+    expect(r.netMinor).toBe(10000);
+    expect(r.lines.map((l) => l.code)).toEqual(['OVERNIGHT']);
+  });
+
   it('multi-night long stay', () => {
     const def: RateDefinitionInput = { base: { unitMinutes: 60, amount: 40 }, overnight: { from: '22:00', to: '06:00', flat: 100 }, dailyCap: 300 };
     const r = price(def, ist('2026-11-01T08:00'), ist('2026-11-04T08:00'));

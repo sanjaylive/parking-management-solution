@@ -11,6 +11,8 @@ import { AuthUser, CurrentUser, Public } from '../auth/context';
 import { PricingService } from '../pricing/pricing.service';
 import { checkPlate, displayPlate } from '../vehicles/plate';
 import { ReservationsService } from './reservations.service';
+import { GateService } from '../sessions/gate.service';
+import { PaymentsService } from '../payments/payments.service';
 
 const profileSchema = z.object({ name: z.string().min(2).max(80), email: z.string().email().optional() });
 const vehicleSchema = z.object({ plate: z.string().min(4).max(20), vehicleClass: z.nativeEnum(VehicleClass), make: z.string().max(40).optional(), model: z.string().max(40).optional(), color: z.string().max(20).optional(), nickname: z.string().max(30).optional(), country: z.string().length(2).default('IN') });
@@ -38,7 +40,43 @@ export class MeController {
     private prisma: PrismaService,
     private reservations: ReservationsService,
     private audit: AuditService,
+    private gate: GateService,
+    private payments: PaymentsService,
   ) {}
+
+  /** A customer may act on a session only for a vehicle they own, and only for stays after they added it. */
+  private async ownedSession(userId: string, sessionId: string) {
+    const s = await this.prisma.parkingSession.findUnique({ where: { id: sessionId }, include: { ticket: { select: { number: true } } } });
+    if (!s?.vehicleId) throw NotFound('Session');
+    const owner = await this.prisma.vehicleOwner.findUnique({ where: { userId_vehicleId: { userId, vehicleId: s.vehicleId } } });
+    // Visible if the stay began after the vehicle was added, or was still in progress at that moment
+    // (driver adds their car while parked). A previous owner's finished stays stay hidden.
+    if (!owner || (s.entryAt < owner.createdAt && s.exitAt !== null && s.exitAt < owner.createdAt)) throw NotFound('Session');
+    return s;
+  }
+
+  @Get('sessions/:id/estimate')
+  async estimate(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    await this.ownedSession(u.userId, id);
+    return this.gate.estimate(id);
+  }
+
+  /**
+   * Pay before driving out. Locks in the charge as of now (server-side quote); the exit gate honours it
+   * for the facility's grace window. Returns a payment order — success comes only from the provider webhook.
+   */
+  @Post('sessions/:id/checkout')
+  @HttpCode(200)
+  async checkout(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    const s = await this.ownedSession(u.userId, id);
+    if (s.exitAt) throw new DomainError('SESSION_ALREADY_COMPLETED', 'Vehicle has already exited', 409);
+    if (!s.ticket) throw new DomainError('NO_TICKET', 'Session has no ticket', 409);
+    const quote = await this.gate.exitQuote({ tenantId: s.tenantId, userId: u.userId }, { facilityId: s.facilityId, credential: { type: 'TICKET', number: s.ticket.number } });
+    const facility = await this.prisma.parkingFacility.findUniqueOrThrow({ where: { id: s.facilityId }, select: { graceMinutes: true } });
+    if (quote.outstandingMinor === 0) return { status: 'EXIT_READY', quote, exitWithinMinutes: facility.graceMinutes };
+    const order = await this.payments.createOrder({ purpose: 'PARKING_SESSION', sessionId: id, requester: { userId: u.userId } });
+    return { status: 'PAYMENT_REQUIRED', quote, order, exitWithinMinutes: facility.graceMinutes };
+  }
 
   @Patch('profile')
   async profile(@CurrentUser() u: AuthUser, @Body(new ZodPipe(profileSchema)) b: z.infer<typeof profileSchema>) {
@@ -111,8 +149,8 @@ export class MeController {
     const owned = await this.prisma.vehicleOwner.findMany({ where: { userId: u.userId }, select: { vehicleId: true, createdAt: true } });
     if (!owned.length) return [];
     const sessions = await this.prisma.parkingSession.findMany({
-      // Only sessions after the user added the vehicle — prevents seeing a previous owner's history.
-      where: { OR: owned.map((o) => ({ vehicleId: o.vehicleId, entryAt: { gte: o.createdAt } })), ...(active === 'true' ? { exitAt: null } : {}), status: active === 'true' ? { notIn: ['COMPLETED', 'CANCELLED'] } : undefined },
+      // Only stays after the user added the vehicle, or in progress then — hides a previous owner's history.
+      where: { OR: owned.flatMap((o) => [{ vehicleId: o.vehicleId, entryAt: { gte: o.createdAt } }, { vehicleId: o.vehicleId, OR: [{ exitAt: null }, { exitAt: { gte: o.createdAt } }] }]), ...(active === 'true' ? { exitAt: null } : {}), status: active === 'true' ? { notIn: ['COMPLETED', 'CANCELLED'] } : undefined },
       include: { facility: { select: { name: true, addressLine: true, timezone: true } }, ticket: { select: { number: true, qrToken: true } }, assignments: { where: { releasedAt: null }, include: { slot: { select: { code: true } } } } },
       orderBy: { entryAt: 'desc' },
       take: 50,

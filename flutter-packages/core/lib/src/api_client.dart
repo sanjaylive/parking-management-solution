@@ -83,6 +83,10 @@ class ApiClient {
   Future<dynamic> post(String path, [Object? body, String? idempotencyKey]) =>
       _send(() => dio.post(path, data: body, options: Options(headers: {'idempotency-key': ?idempotencyKey})));
 
+  Future<dynamic> patch(String path, [Object? body]) => _send(() => dio.patch(path, data: body));
+
+  Future<dynamic> delete(String path) => _send(() => dio.delete(path));
+
   Future<dynamic> _send(Future<Response> Function() call, {bool retried = false}) async {
     try {
       final r = await call();
@@ -124,6 +128,18 @@ class ApiClient {
     final facilityIds = (m['facilityIds'] as List).cast<String>();
     await sessions.save(sessions.current!.copyWith(tenantId: m['tenantId'], facilityId: facilityIds.isEmpty ? null : facilityIds.first));
     return me;
+  }
+
+  // ── Customer OTP auth (no operator/tenant context) ──
+
+  /// Returns `{sentTo, expiresIn, devCode?}`. `devCode` only exists against a non-production API.
+  Future<Map<String, dynamic>> requestOtp(String phone) async => (await post('/v1/auth/otp/request', {'phone': phone}) as Map).cast<String, dynamic>();
+
+  /// Verifies the OTP, stores the session, returns `{user, isNewUser}`.
+  Future<Map<String, dynamic>> verifyOtp(String phone, String code) async {
+    final r = (await post('/v1/auth/otp/verify', {'phone': phone, 'code': code}) as Map).cast<String, dynamic>();
+    await sessions.save(Session(accessToken: r['accessToken'], refreshToken: r['refreshToken']));
+    return r;
   }
 
   Future<void> logout() async {
