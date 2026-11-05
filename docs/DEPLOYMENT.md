@@ -24,6 +24,7 @@ npm run deploy ─► git push origin main ─► GitHub Actions
 |---|---|
 | `https://park.2all.co.in/` | Booking website (Next.js, `park-booking:3104`) |
 | `/operator` | Operator console (Next.js, `park-operator:3101`) |
+| `/admin` → `/operator/admin` | Platform admin portal (same app; Super Admin / Support accounts) |
 | `/v1/*`, `/health`, `/socket.io/` | API (NestJS, `park-api:4100`) |
 | `/staff/` | Staff gate app (Flutter web, `park-static:8080`) |
 | `/app/` | Customer app (Flutter web, `park-static:8080`) |

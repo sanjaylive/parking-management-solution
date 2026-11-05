@@ -29,7 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const a = auth.get();
-    if (!a?.tenantId) router.replace('/login');
+    if (!a?.tenantId) router.replace(a?.accessToken ? '/admin' : '/login'); // signed in without an operator = platform admin
     else { setFacility(a.facilityId); setReady(true); }
     try { setTheme((localStorage.getItem('p2a.theme') as any) ?? null); } catch { /* ignore */ }
   }, [router]);

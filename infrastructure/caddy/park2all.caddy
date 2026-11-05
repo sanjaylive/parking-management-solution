@@ -2,7 +2,7 @@
 # Site block for the shared edge Caddy (pay2all stack). Keep identical to the copy in that repo's
 # infra/deploy/Caddyfile; remote-release.sh re-applies it between the BEGIN/END markers on each deploy.
 # Containers are reached over the pay2all_internal network, which the park2all stack joins.
-#   /                booking website      /operator   operator console
+#   /                booking website      /operator   operator console   /admin → /operator/admin (platform admin)
 #   /v1, /health, /socket.io   API        /staff/     staff app      /app/   customer app (Flutter web)
 park.2all.co.in {
 	encode zstd gzip
@@ -20,6 +20,10 @@ park.2all.co.in {
 	handle @api {
 		reverse_proxy park-api:4100
 	}
+
+	# Platform admin portal lives in the operator console app.
+	redir /admin /operator/admin 308
+	redir /admin/* /operator{uri} 308
 
 	handle /operator* {
 		reverse_proxy park-operator:3101

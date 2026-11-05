@@ -86,7 +86,7 @@ _Last updated: 2026-11-06 (customer app + booking web)_
 
 ## Phase 8 — Super admin & SaaS
 - ✅ Admin API: dashboard (MRR, tenants, sessions, revenue), tenant list/detail, onboarding (tenant + owner + trial), suspend, plans, audit log
-- ⬜ Admin web portal
+- ✅ Admin web portal (`apps/operator-web/src/app/admin`, served at /admin): overview, operators list/search, onboard operator, operator detail + status changes, plans, audit log
 - ⬜ SaaS invoicing / billing jobs
 
 ## Phase 9 — Corporate, valet, reporting, support

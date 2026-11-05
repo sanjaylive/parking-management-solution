@@ -19,6 +19,8 @@ export default function LoginPage() {
       const r = await api('/v1/auth/login', { method: 'POST', json: { identifier: f.get('identifier'), password: f.get('password') } });
       auth.set({ accessToken: r.accessToken, refreshToken: r.refreshToken });
       const me = await api('/v1/auth/me');
+      // Platform admins (Super Admin, Support) go to the admin portal; operator staff to their console.
+      if (me.platformRoles?.length) { router.replace('/admin'); return; }
       const m = me.memberships[0];
       if (!m) { auth.set(null); throw new ApiError(403, 'NO_TENANT', 'This account is not a member of any parking operator.'); }
       auth.patch({ tenantId: m.tenantId, facilityId: m.facilityIds?.[0] });
@@ -51,7 +53,7 @@ export default function LoginPage() {
         <form onSubmit={submit} className="w-full max-w-sm space-y-5">
           <div>
             <h2 className="text-2xl font-extrabold">Sign in to your console</h2>
-            <p className="mt-1 text-sm text-muted">Operators, managers and gate staff.</p>
+            <p className="mt-1 text-sm text-muted">Operators, managers, gate staff and platform admins.</p>
           </div>
           <Input name="identifier" label="Email or mobile" autoComplete="username" required placeholder="you@company.com" />
           <Input name="password" type="password" label="Password" autoComplete="current-password" required minLength={8} />
