@@ -1,0 +1,154 @@
+# Park2All production stack on the shared VPS. Started by infrastructure/scripts/remote-release.sh:
+#   docker compose -p park2all -f compose.yml --env-file /opt/park2all/.env.production …
+# Images are built in CI and shipped with `docker load`; nothing builds on the server.
+# No ports are published: the server's edge Caddy (pay2all stack) reaches park-api:4100, park-operator:3101,
+# park-booking:3104 and park-static:8080 over the external EDGE_NETWORK. Service names are unique on purpose —
+# compose registers them as DNS aliases on that shared network, where other stacks also have api/web/postgres.
+name: park2all
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '20m', max-file: '5' }
+
+x-app: &app
+  image: park2all-app:${APP_RELEASE:?APP_RELEASE is required}
+  restart: unless-stopped
+  logging: *logging
+
+x-api-env: &api-env
+  NODE_ENV: production
+  HOST: 0.0.0.0
+  PORT: '4100'
+  DATABASE_URL: postgresql://park2all:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@park-postgres:5432/park2all?schema=public
+  REDIS_URL: redis://park-redis:6379
+
+services:
+  park-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: park2all
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: park2all
+    command: ['postgres', '-c', 'shared_buffers=48MB', '-c', 'max_connections=30']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [internal]
+    logging: *logging
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U park2all -d park2all']
+      interval: 5s
+      retries: 20
+
+  park-redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    mem_limit: 96m
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '64mb', '--maxmemory-policy', 'noeviction']
+    volumes: [redisdata:/data]
+    networks: [internal]
+    logging: *logging
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 20
+
+  # One-off release step: database migrations. Run before the new API starts.
+  migrate:
+    <<: *app
+    profiles: [migrate]
+    restart: 'no'
+    mem_limit: 384m
+    env_file: ${ENV_FILE:?ENV_FILE is required}
+    environment: *api-env
+    working_dir: /app/api
+    command: ['./node_modules/.bin/prisma', 'migrate', 'deploy']
+    networks: [internal]
+    depends_on:
+      park-postgres: { condition: service_healthy }
+
+  # One API process on purpose: Socket.IO (/live) and the reservation sweeper assume a single instance.
+  park-api:
+    <<: *app
+    mem_limit: 384m
+    env_file: ${ENV_FILE}
+    environment:
+      <<: *api-env
+      NODE_OPTIONS: --max-old-space-size=288
+    working_dir: /app/api
+    command: ['node', 'dist/main.js']
+    networks:
+      internal: {}
+      edge: {}
+    depends_on:
+      park-postgres: { condition: service_healthy }
+      park-redis: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4100/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      retries: 12
+      start_period: 30s
+
+  park-operator:
+    <<: *app
+    mem_limit: 256m
+    environment:
+      NODE_OPTIONS: --max-old-space-size=192
+      HOSTNAME: 0.0.0.0
+      PORT: '3101'
+    working_dir: /app/operator-web/apps/operator-web
+    command: ['node', 'server.js']
+    networks:
+      internal: {}
+      edge: {}
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3101/operator/login').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      retries: 12
+      start_period: 15s
+
+  park-booking:
+    <<: *app
+    mem_limit: 256m
+    environment:
+      NODE_OPTIONS: --max-old-space-size=192
+      HOSTNAME: 0.0.0.0
+      PORT: '3104'
+      # Server components call the API inside the stack; browsers use the public URL baked in at build time.
+      API_URL: http://park-api:4100
+      PUBLIC_URL: ${PUBLIC_URL:-https://park.2all.co.in}
+    working_dir: /app/booking-web/apps/booking-web
+    command: ['node', 'server.js']
+    networks:
+      internal: {}
+      edge: {}
+    depends_on:
+      park-api: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3104/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      retries: 12
+      start_period: 15s
+
+  park-static:
+    image: park2all-static:${APP_RELEASE}
+    restart: unless-stopped
+    mem_limit: 64m
+    networks:
+      internal: {}
+      edge: {}
+    logging: *logging
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8080/staff/']
+      interval: 10s
+      retries: 6
+
+networks:
+  internal: {}
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:?EDGE_NETWORK is required}
+
+volumes:
+  pgdata: {}
+  redisdata: {}

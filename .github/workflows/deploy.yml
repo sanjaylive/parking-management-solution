@@ -1,4 +1,4 @@
-# Push to main → test everything → build one release bundle → ship it to the VPS.
+# Push to main → test everything → build Docker images from the release → ship them to the VPS (docker load + compose).
 # Required repository secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY. Optional: VPS_PORT (default 22),
 # VPS_KNOWN_HOSTS (output of `ssh-keyscan -H <host>`; strongly recommended). See docs/DEPLOYMENT.md.
 name: CI & Deploy
@@ -130,14 +130,21 @@ jobs:
         with:
           path: parts
           merge-multiple: true
-      - name: Pack release
+      - name: Build images
         run: |
           mkdir release
           for t in parts/*.tgz; do tar -C release -xzf "$t"; done
-          echo "${GITHUB_SHA}" > release/RELEASE
           cp -R infrastructure release/infrastructure
-          tar -C release -czf park2all-${GITHUB_SHA}.tgz .
-          ls -lh park2all-${GITHUB_SHA}.tgz
+          docker build -f infrastructure/docker/app.Dockerfile --build-arg RELEASE_SHA=${GITHUB_SHA} -t park2all-app:${GITHUB_SHA} release
+          docker build -f infrastructure/docker/static.Dockerfile -t park2all-static:${GITHUB_SHA} release
+          docker save park2all-app:${GITHUB_SHA} park2all-static:${GITHUB_SHA} | gzip -1 > park2all-images-${GITHUB_SHA}.tgz
+      - name: Pack release (compose, Caddy block, scripts)
+        run: |
+          mkdir bundle
+          echo "${GITHUB_SHA}" > bundle/RELEASE
+          cp -R infrastructure bundle/infrastructure
+          tar -C bundle -czf park2all-${GITHUB_SHA}.tgz .
+          ls -lh park2all-*.tgz
       - name: Configure SSH
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -163,5 +170,5 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_PORT }}
         run: |
           SSH="ssh -i ~/.ssh/deploy_key -p ${VPS_PORT:-22} -o BatchMode=yes -o StrictHostKeyChecking=yes"
-          scp -i ~/.ssh/deploy_key -P "${VPS_PORT:-22}" -o BatchMode=yes park2all-${GITHUB_SHA}.tgz infrastructure/scripts/remote-release.sh "$VPS_USER@$VPS_HOST:/tmp/"
-          $SSH "$VPS_USER@$VPS_HOST" "bash /tmp/remote-release.sh /tmp/park2all-${GITHUB_SHA}.tgz ${GITHUB_SHA}"
+          scp -i ~/.ssh/deploy_key -P "${VPS_PORT:-22}" -o BatchMode=yes park2all-${GITHUB_SHA}.tgz park2all-images-${GITHUB_SHA}.tgz infrastructure/scripts/remote-release.sh "$VPS_USER@$VPS_HOST:/tmp/"
+          $SSH "$VPS_USER@$VPS_HOST" "bash /tmp/remote-release.sh /tmp/park2all-${GITHUB_SHA}.tgz /tmp/park2all-images-${GITHUB_SHA}.tgz ${GITHUB_SHA}"

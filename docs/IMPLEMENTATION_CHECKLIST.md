@@ -114,10 +114,10 @@ _Last updated: 2026-11-06 (customer app + booking web)_
 ## Phase 12 — Deployment
 - ✅ `npm run deploy` → push main → GitHub Actions (`.github/workflows/deploy.yml`): API tests on Postgres+Redis, typecheck, Flutter analyze/test, builds, deploy over SSH
 - ✅ Release bundle (`infrastructure/scripts/package-release.sh`): API with prod-only deps + Prisma engines for Ubuntu, Next.js standalone servers, Flutter web
-- ✅ VPS activation (`remote-release.sh`): migrate → atomic `current` symlink → PM2 reload → health check on release sha → auto-rollback. Verified locally (fresh DB, reload, broken release rolled back with exit 1)
-- ✅ PM2 ecosystem, Nginx site for park.2all.co.in (path-routed; validated with `nginx -t` + routing checks in Docker), Certbot via `vps-setup.sh`
+- ✅ VPS activation (`remote-release.sh`): docker load → migrate → `compose up --wait` → health check on release sha → auto-rollback → edge Caddy block re-applied
+- ✅ Docker stack (`infrastructure/docker/compose.yml`) on the shared VPS behind pay2all's edge Caddy (site block validated with `caddy validate`; static routing checked in Docker)
 - ✅ Staging mode `ALLOW_SANDBOX_PROVIDERS=true` (production build with console OTP + sandbox payments, flagged in `/health`)
-- ⚠️ Not yet run against the real VPS: needs DNS A record, `vps-setup.sh`, and GitHub secrets (docs/DEPLOYMENT.md)
+- ⚠️ Not yet run against the real VPS: needs the deploy key on `twoall` and the GitHub secrets (docs/DEPLOYMENT.md)
 - ⬜ Automated DB backups (pg_dump off-box) + restore drill
 
 ## Local ports (chosen to avoid other projects on this machine)

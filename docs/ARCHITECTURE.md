@@ -11,7 +11,7 @@ Smart Mobility & Parking SaaS. Modular monolith first; hardware gateway and work
                          └───────────────┬─────────────────────────────┬───────────┘
                                          │ HTTPS REST + WS (JWT)       │
                                 ┌────────▼─────────┐                   │
-                                │      Nginx       │  TLS, rate limit, static
+                                │   Caddy (edge)   │  TLS, routing     
                                 └────────┬─────────┘
                        ┌─────────────────▼──────────────────┐
                        │       apps/api  (NestJS 11)        │
