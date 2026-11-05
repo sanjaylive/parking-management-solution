@@ -19,12 +19,14 @@ npm run deploy ─► git push origin main ─► GitHub Actions
 | `/staff/` | Staff gate app (Flutter web, static) |
 | `/app/` | Customer app (Flutter web, static) |
 
-All Node processes bind to 127.0.0.1; only Nginx (80/443) is exposed.
+All Node processes bind to 127.0.0.1; only the web server (80/443) is exposed.
+
+**This VPS (148.66.152.2, Ubuntu 22.04) already runs Caddy**, so `vps-setup.sh` adds `infrastructure/caddy/park2all.caddy` to the existing Caddy config with one `import` line. It does not install Nginx. The new config is validated before reload, and the original Caddyfile is restored if validation fails. Caddy obtains the certificate itself. `infrastructure/nginx/park2all.conf` is the equivalent for servers without Caddy.
 
 ## One-time setup
 
 ### 1. DNS
-Add an **A record**: `park.2all.co.in → <VPS IPv4>` (and AAAA if the VPS has IPv6). Wait until `dig +short park.2all.co.in` returns the IP; the certificate step needs it.
+Already done: `park.2all.co.in → 148.66.152.2`.
 
 ### 2. Deploy key
 On your machine:
@@ -34,17 +36,17 @@ ssh-keygen -t ed25519 -N "" -C github-deploy -f ~/.ssh/park2all_deploy
 
 ### 3. Bootstrap the VPS (Ubuntu 22.04/24.04, as root)
 ```bash
-scp -r infrastructure root@<VPS_IP>:/root/park2all-infra
-ssh root@<VPS_IP> \
+scp -r infrastructure root@148.66.152.2:/root/park2all-infra
+ssh root@148.66.152.2 \
   DOMAIN=park.2all.co.in EMAIL=<your-email> DEPLOY_PUBKEY=\"$(cat ~/.ssh/park2all_deploy.pub)\" \
   bash /root/park2all-infra/scripts/vps-setup.sh
 ```
-This installs Node 24, PM2, Postgres, Redis, Nginx and Certbot. It also:
+This installs Node 24, PM2, Postgres and Redis. It also:
 - creates the `deploy` user and the `park2all` database;
 - writes `/opt/park2all/shared/api.env` with random secrets;
-- gets the Let's Encrypt certificate and installs the Nginx site.
+- connects the web server (Caddy here; otherwise Nginx with Certbot).
 
-It is safe to re-run.
+It refuses to run if ports 4100, 3101 or 3104 are already used by another program. It leaves the firewall alone unless you pass `ENABLE_UFW=1`. It is safe to re-run.
 
 ### 4. GitHub secrets
 Repo → Settings → Secrets and variables → Actions:
@@ -55,14 +57,14 @@ Repo → Settings → Secrets and variables → Actions:
 | `VPS_USER` | `deploy` |
 | `VPS_SSH_KEY` | contents of `~/.ssh/park2all_deploy` (private key) |
 | `VPS_PORT` | optional, default 22 |
-| `VPS_KNOWN_HOSTS` | recommended: output of `ssh-keyscan -H <VPS_IP>` |
+| `VPS_KNOWN_HOSTS` | recommended: output of `ssh-keyscan -H 148.66.152.2` |
 
 Or with the CLI:
 ```bash
-gh secret set VPS_HOST -b "<VPS_IP>"
+gh secret set VPS_HOST -b "148.66.152.2"
 gh secret set VPS_USER -b deploy
 gh secret set VPS_SSH_KEY < ~/.ssh/park2all_deploy
-ssh-keyscan -H <VPS_IP> | gh secret set VPS_KNOWN_HOSTS
+ssh-keyscan -H 148.66.152.2 | gh secret set VPS_KNOWN_HOSTS
 ```
 Optional repository variable `PUBLIC_URL` (default `https://park.2all.co.in`) is baked into the web/Flutter builds.
 
@@ -74,7 +76,7 @@ npm run deploy:status   # recent runs
 
 ### 6. Demo data (staging only, optional, once)
 ```bash
-ssh deploy@<VPS_IP>
+ssh deploy@148.66.152.2
 cd /opt/park2all/current/api && set -a && . /opt/park2all/shared/api.env && set +a \
   && SEED_PASSWORD='<choose-a-strong-password>' node dist-seed/prisma/seed.js
 ```
@@ -107,7 +109,7 @@ Caveats:
 
 ## Manual rollback
 ```bash
-ssh deploy@<VPS_IP>
+ssh deploy@148.66.152.2
 ls -t /opt/park2all/releases                      # pick a sha
 ln -sfn /opt/park2all/releases/<sha> /opt/park2all/current
 pm2 startOrReload /opt/park2all/current/infrastructure/pm2/ecosystem.config.cjs --update-env

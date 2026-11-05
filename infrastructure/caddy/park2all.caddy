@@ -1,0 +1,48 @@
+# park.2all.co.in — Caddy site (used when the VPS already runs Caddy; TLS certificates are automatic).
+# Imported from the main Caddyfile by vps-setup.sh:  import /etc/caddy/park2all.caddy
+# Same routing as infrastructure/nginx/park2all.conf:
+#   /                booking website (:3104)      /operator   operator console (:3101)
+#   /v1, /health, /socket.io   API (:4100)        /staff/     staff app      /app/   customer app (static Flutter web)
+__DOMAIN__ {
+	encode zstd gzip
+	request_body {
+		max_size 5MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	@api path /v1/* /health /socket.io/*
+	handle @api {
+		reverse_proxy 127.0.0.1:4100
+	}
+
+	handle /operator* {
+		reverse_proxy 127.0.0.1:3101
+	}
+
+	redir /staff /staff/ 308
+	handle_path /staff/* {
+		root * /opt/park2all/current/web/staff
+		@nocache path / /index.html /flutter_service_worker.js /flutter_bootstrap.js /version.json
+		header @nocache Cache-Control no-cache
+		try_files {path} /index.html
+		file_server
+	}
+
+	redir /app /app/ 308
+	handle_path /app/* {
+		root * /opt/park2all/current/web/app
+		@nocache path / /index.html /flutter_service_worker.js /flutter_bootstrap.js /version.json
+		header @nocache Cache-Control no-cache
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3104
+	}
+}
